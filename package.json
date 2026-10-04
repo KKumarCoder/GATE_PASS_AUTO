@@ -1,0 +1,29 @@
+{
+  "name": "srps-gate-pass",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently -k \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w client",
+    "test": "npm run test -w server",
+    "start": "npm run start -w server",
+    "seed": "npm run seed -w server",
+    "test:browser": "node tests/browser.mjs",
+    "test:browser:access": "node tests/access-browser.mjs",
+    "test:browser:operations": "node tests/operations-browser.mjs",
+    "check": "npm test && npm run build && npm run test:browser && npm run test:browser:access && npm run test:browser:operations"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "concurrently": "^9.1.2"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
+  }
+}

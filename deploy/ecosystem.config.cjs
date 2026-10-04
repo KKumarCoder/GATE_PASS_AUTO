@@ -1,0 +1,1 @@
+module.exports = { apps: [{ name: 'srps-api', cwd: '/srv/srps/current/server', script: 'server.js', instances: 1, exec_mode: 'fork', autorestart: true, max_memory_restart: '512M', kill_timeout: 10000, time: true, env: { NODE_ENV: 'production' } }] };

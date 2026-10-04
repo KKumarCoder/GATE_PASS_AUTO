@@ -1,0 +1,24 @@
+.app-loader{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;min-height:260px;width:100%;color:#6654dc}
+.app-loader-art{position:relative;display:block;width:84px;height:84px;flex-shrink:0}
+.app-loader-halo{position:absolute;inset:-12px;background:radial-gradient(circle,#9580ff38,transparent 70%);filter:blur(8px)}
+.app-loader-tiles{position:absolute;inset:10px;display:grid;grid-template-columns:1fr 1fr;gap:7px;transform:rotate(-12deg)}
+.app-loader-tiles>span{border-radius:10px;border:1px solid #ffffff85;background:linear-gradient(135deg,#a392ff,#6651db);box-shadow:0 6px 15px #7056df25,inset 0 1px 0 #ffffff70;animation:loader-tile-pulse 1.8s ease-in-out infinite}
+.app-loader-tiles>span:nth-child(2){background:linear-gradient(135deg,#7ad9db,#249dac);animation-delay:.15s}
+.app-loader-tiles>span:nth-child(3){background:linear-gradient(135deg,#99bbfa,#5c7ee1);animation-delay:.45s}
+.app-loader-tiles>span:nth-child(4){background:linear-gradient(135deg,#c5a3f4,#9570d9);animation-delay:.3s}
+.app-loader-caption{font-size:12px;font-weight:500;letter-spacing:.2px;color:#687893;text-align:center;line-height:1.6}
+.app-loader-dots{display:flex;gap:5px;margin-top:-7px}
+.app-loader-dots i{width:4px;height:4px;border-radius:50%;background:#8b7bdd;animation:loader-dot-pulse 1.4s ease-in-out infinite}
+.app-loader-dots i:nth-child(2){animation-delay:.2s;background:#619ac7}
+.app-loader-dots i:nth-child(3){animation-delay:.4s;background:#48adad}
+.app-loader-inline{display:inline-flex;width:auto;min-height:0;gap:0;vertical-align:middle}
+.app-loader-inline .app-loader-art{width:24px;height:24px}
+.app-loader-inline .app-loader-tiles{inset:1px;gap:3px}
+.app-loader-inline .app-loader-tiles>span{border-radius:3px;box-shadow:none}
+.app-loader-inline .app-loader-halo{display:none}
+[data-theme='dark'] .app-loader-caption{color:#b9c5dd}
+[data-theme='dark'] .app-loader-halo{background:radial-gradient(circle,#8f6bff40,transparent 70%)}
+@keyframes loader-tile-pulse{0%,70%,100%{transform:translateY(0) scale(1);opacity:.75}35%{transform:translateY(-6px) scale(1.07);opacity:1}}
+@keyframes loader-dot-pulse{0%,80%,100%{opacity:.35;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
+@media(prefers-reduced-motion:reduce){.app-loader *{animation:none!important}}
+@media print{.app-loader{display:none!important}}
