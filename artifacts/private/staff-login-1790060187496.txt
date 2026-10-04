@@ -1,0 +1,27 @@
+SRPS staff login details — PRIVATE
+Login URL: http://localhost:5173
+Created: 2026-09-22T06:56:27.496Z
+
+ADMIN / SUPER ADMIN
+Email: srpskanhra2012@gmail.com
+Employee ID: SRPS-ADMIN-001
+Password: Kri@8340202627 (use your existing administrator password)
+
+SECURITY_GUARD
+Email: srps2012@gmail.com
+Employee ID: SRPS-GUARD-001
+Initial password:srps@8340
+Assigned gate: Main Gate
+
+PRINCIPAL
+Email: manjushagwan2012@gmail.com
+Employee ID: SRPS-PRINCIPAL-001
+Initial password:srps@8340
+
+TEACHER
+Email: krishnakumar.snm004@gmail.com
+Employee ID: SRPS-EMP-001
+Initial password:srps@8340
+
+Employee account currently uses Teacher permissions. Admin can change this in Users & access.
+No email was sent. Share each person’s own login details privately; do not share this full file.
