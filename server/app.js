@@ -12,7 +12,7 @@ import management from './routes/management.js';
 import reports from './routes/reports.js';
 import busSwaps from './routes/bus-swaps.js';
 const app=express();
-app.disable('x-powered-by');app.set('trust proxy',Number(process.env.TRUST_PROXY||0));
+app.disable('x-powered-by');app.set('trust proxy',process.env.TRUST_PROXY==='true'||Number(process.env.TRUST_PROXY)||0);
 app.use(helmet({referrerPolicy:{policy:'no-referrer'}}));
 app.use(cors({origin(origin,cb){cb(null,!origin||origin===env.frontend);},credentials:true}));
 app.use((req,res,next)=>{res.set('Cache-Control','no-store');if(!['GET','HEAD','OPTIONS'].includes(req.method)&&req.headers.origin&&req.headers.origin!==env.frontend)return res.status(403).json({success:false,message:'Origin is not allowed.',data:{}});next();});

@@ -68,6 +68,6 @@ export function validateEnvironment() {
       throw new Error(`JWT ${key} secret must have at least 32 characters.`);
   if (env.access === env.refresh)
     throw new Error("Use different access and refresh secrets.");
-  if (env.node === "production" && !env.frontend.startsWith("https://"))
-    throw new Error("Production FRONTEND_URL must use HTTPS.");
+  if (env.node === "production" && !env.frontend.startsWith("https://") && !/^https?:\/\/(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?$/.test(env.frontend))
+    throw new Error("Production FRONTEND_URL must use HTTPS (or server IP).");
 }
