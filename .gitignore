@@ -1,6 +1,6 @@
 node_modules/
-.env
-.env.*
+
+
 dist/
 coverage/
 *.log
@@ -8,5 +8,3 @@ coverage/
 server/uploads/
 playwright-report/
 test-results/
-.env
-server/.env
