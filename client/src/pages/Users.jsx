@@ -38,7 +38,7 @@ function AccessForm({account,actor,onSaved}) {
   const submit=async e=>{
     e.preventDefault();const values=Object.fromEntries(new FormData(e.currentTarget));setBusy(true);
     const access={role,assignedGate:gate,...(!isAdmin({role})?{permissions}:{})};
-    try{await act(()=>creating?post('/users',{...values,...access}):api.patch(`/users/${account._id}`,{...access,active}),creating?'Staff account created':'Access saved; staff must sign in again');onSaved();}catch{}finally{setBusy(false);}
+    try{await act(()=>creating?post('/users',{...values,...access}):api.patch(`/users/${account._id}`,{...access,active,mobile:values.mobile}),creating?'Staff account created':'Access saved; staff must sign in again');onSaved();}catch{}finally{setBusy(false);}
   };
   return <form onSubmit={submit}>
     {creating&&<div className="form-grid">
@@ -48,6 +48,7 @@ function AccessForm({account,actor,onSaved}) {
       <Field label="Department"><input name="department" maxLength={500}/></Field>
       <Field label="Initial password (12+ characters)"><input name="password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required/></Field>
     </div>}
+    <Field label="Registered mobile (Principal SMS OTP)"><input name="mobile" type="tel" placeholder="+91XXXXXXXXXX" maxLength={16} defaultValue={account.mobile||''}/></Field>
     <div className="form-grid"><Field label="Role"><select aria-label="Role" value={role} onChange={e=>changeRole(e.target.value)}>{roles.map(r=><option key={r} value={r}>{pretty(r)}</option>)}</select></Field>
     <Field label="Assigned gate"><select aria-label="Assigned gate" value={gate} onChange={e=>setGate(e.target.value)} required={role==='SECURITY_GUARD'}>{role!=='SECURITY_GUARD'&&<option value="">All configured gates</option>}{[...new Set([...(settings.data?.gates||['Main Gate']),...(gate?[gate]:[])])].map(g=><option key={g}>{g}</option>)}</select></Field></div>
     {!creating&&<label className="checkbox"><input type="checkbox" checked={active} onChange={e=>setActive(e.target.checked)}/> Account active</label>}

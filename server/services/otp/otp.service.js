@@ -20,7 +20,7 @@ import {
   sendWhatsAppMessage,
   notifyPass,
 } from "../whatsapp/whatsapp.service.js";
-import { sendTwilioOTP, verifyTwilioOTP } from "./twilio.service.js";
+import { sendApitxtOTP } from "./apitxt.service.js";
 import { sendEmailOTP } from "../email.service.js";
 export async function sendOTP(req, pass, requestedChannel) {
   const consoleMode = isConsoleOTPEnabled();
@@ -39,17 +39,12 @@ export async function sendOTP(req, pass, requestedChannel) {
     assert(isEmailOTPConfigured(), 503, "Email OTP is not configured. Check the SMTP settings.");
   }
   if (channel === "sms") {
-    assert(isSmsOTPConfigured(), 503, "SMS OTP is not configured. Check the Twilio settings.");
+    assert(isSmsOTPConfigured(), 503, "SMS OTP is not configured. Check the APITxT settings.");
   }
-  const otp =
-    channel !== "sms"
-      ? crypto.randomInt(100000, 1000000).toString()
-      : null;
-  const hashedOTP = otp ? await bcrypt.hash(otp, 12) : undefined;
+  const otp = crypto.randomInt(100000, 1000000).toString();
+  const hashedOTP = await bcrypt.hash(otp, 12);
   const settings = await SystemSetting.findOne({ key: "school" });
-  const minutes = channel === "sms"
-    ? env.otpMinutes
-    : Math.min(env.otpMinutes, settings?.otpExpiryMinutes || 10);
+  const minutes = Math.min(env.otpMinutes, settings?.otpExpiryMinutes || 10);
   const expiresAt = new Date(Date.now() + minutes * 60000);
   const sentAt = new Date();
   const recipient = channel === "email" ? pass.student.email : pass.student.primaryMobile;
@@ -123,7 +118,7 @@ export async function sendOTP(req, pass, requestedChannel) {
           channel === "console"
             ? "DEVELOPMENT_CONSOLE"
             : channel === "sms"
-              ? "TWILIO_SMS"
+              ? "APITXT_SMS"
               : channel === "email"
                 ? "EMAIL"
                 : "WHATSAPP",
@@ -160,7 +155,7 @@ export async function sendOTP(req, pass, requestedChannel) {
     return { status: "DEVELOPMENT_ONLY", deliveryMethod: "console", expiresAt };
   }
   if (channel === "sms") {
-    return sendTwilioOTPForPass(pass, expiresAt);
+    return sendSmsOTPForPass(pass, otp, expiresAt, sentAt);
   }
   if (channel === "email") {
     const notification = await Notification.create({
@@ -203,16 +198,16 @@ export async function sendOTP(req, pass, requestedChannel) {
     event: "OTP_SENT",
   });
 }
-async function sendTwilioOTPForPass(pass, expiresAt) {
+async function sendSmsOTPForPass(pass, otp, expiresAt, sentAt) {
   const notification = await Notification.create({
     gatePass: pass._id,
     recipient: pass.student.primaryMobile,
     event: "OTP_SENT",
-    provider: "twilio-sms",
+    provider: "apitxt-sms",
     status: "PENDING",
   });
   try {
-    const result = await sendTwilioOTP(pass.student.primaryMobile);
+    const result = await sendApitxtOTP(pass.student.primaryMobile, otp);
     assert(result.success, 502, "Unable to initiate SMS OTP.");
     notification.status = "SENT";
     await notification.save();
@@ -222,6 +217,10 @@ async function sendTwilioOTPForPass(pass, expiresAt) {
     notification.error =
       "SMS OTP delivery request failed. Check the SMS provider configuration and dashboard.";
     await notification.save();
+    await OTPVerification.updateOne(
+      { gatePass: pass._id, sentAt },
+      { expiresAt: new Date(), verified: true },
+    );
     assert(false, 502, "Unable to initiate SMS OTP.");
   }
 }
@@ -266,26 +265,14 @@ export async function verifyOTP(req, passId, otp) {
     { new: true },
   ).select("+hashedOTP");
   assert(record, 400, "OTP expired, missing, or attempt limit reached.");
-  const smsMode = record.deliveryMethod === "TWILIO_SMS";
-  if (smsMode) {
-    let result;
-    try {
-      result = await verifyTwilioOTP(record.mobileNumber, otp);
-    } catch {
-      assert(false, 502, "Unable to verify SMS OTP.");
-    }
-    assert(result.success, 400, "Incorrect or expired OTP.");
-  } else {
-    assert(await bcrypt.compare(otp, record.hashedOTP), 400, "Incorrect OTP.");
-  }
+  assert(record.hashedOTP, 400, "Request a new OTP.");
+  assert(await bcrypt.compare(otp, record.hashedOTP), 400, "Incorrect OTP.");
   const pass = await transaction(async (session) => {
     const consumed = await OTPVerification.findOneAndUpdate(
       {
         _id: record._id,
         sentAt: record.sentAt,
-        ...(record.deliveryMethod === "TWILIO_SMS"
-          ? { deliveryMethod: "TWILIO_SMS" }
-          : { hashedOTP: record.hashedOTP }),
+        hashedOTP: record.hashedOTP,
         verified: false,
         expiresAt: { $gt: new Date() },
       },
@@ -321,7 +308,7 @@ export async function verifyOTP(req, passId, otp) {
         ? "DEVELOPMENT_OTP"
         : record.deliveryMethod === "EMAIL"
           ? "EMAIL_OTP"
-          : record.deliveryMethod === "TWILIO_SMS"
+          : record.deliveryMethod === "APITXT_SMS"
             ? "SMS_OTP"
             : "OTP",
       session,

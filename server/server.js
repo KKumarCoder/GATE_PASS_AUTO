@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import app from "./app.js";
 import { env, validateEnvironment } from "./config/env.js";
 import { expirePasses } from "./services/expiry.service.js";
+import {deliverSwapEmails} from './services/bus-swap-email.service.js';
 validateEnvironment();
 if (env.otpDeliveryMode === "console")
   console.log(
@@ -17,6 +18,7 @@ const timer = setInterval(async () => {
   expiring = true;
   try {
     await expirePasses();
+    await deliverSwapEmails();
   } catch (error) {
     console.error("Pass expiration job failed.", error);
   } finally {

@@ -1,5 +1,8 @@
 // Shared by the API and UI. Missing overrides preserve role defaults; [] grants nothing.
 export const permissionLabels = {
+  'bus-swaps.view': 'View temporary bus swaps',
+  'bus-swaps.create': 'Request and cancel temporary bus swaps',
+  'bus-swaps.approve': 'Approve or reject temporary bus swaps',
   'passes.view': 'View student gate passes',
   'passes.create': 'Create, verify parents, share and cancel passes',
   'passes.approve': 'Approve or reject student passes',
@@ -25,12 +28,13 @@ export const permissionKeys = Object.keys(permissionLabels);
 export const roleDefaults = {
   SUPER_ADMIN: permissionKeys,
   ADMIN: permissionKeys,
-  PRINCIPAL: ['passes.view','passes.create','passes.approve','students.view'],
-  TEACHER: ['passes.view','passes.create','students.view','staff.view','staff.request'],
-  RECEPTION: ['passes.view','passes.create','students.view','visitors.view','visitors.create','staff.view','staff.request'],
-  SECURITY_GUARD: ['gate.verify','gate.move'],
+  PRINCIPAL: ['bus-swaps.view','bus-swaps.create','bus-swaps.approve','passes.view','passes.create','passes.approve','students.view'],
+  TEACHER: ['bus-swaps.view','bus-swaps.create','passes.view','passes.create','students.view','staff.view','staff.request'],
+  RECEPTION: ['bus-swaps.view','bus-swaps.create','passes.view','passes.create','students.view','visitors.view','visitors.create','staff.view','staff.request'],
+  SECURITY_GUARD: ['bus-swaps.view','gate.verify','gate.move'],
 };
 export const dependencies = {
+  'bus-swaps.create':['bus-swaps.view','students.view'], 'bus-swaps.approve':['bus-swaps.view'],
   'passes.create':['passes.view','students.view'], 'passes.approve':['passes.view'],
   'passes.emergency':['passes.create'], 'gate.move':['gate.verify'],
   'students.manage':['students.view'], 'visitors.create':['visitors.view'],
@@ -60,6 +64,6 @@ export function togglePermission(values,key,enabled) {
 }
 export const assignedGateFor = user => user?.assignedGate || (user?.role === 'SECURITY_GUARD' ? 'Main Gate' : '');
 export const homeFor = user => {
-  const choices = [['reports.view','/'],['passes.view','/gatepasses'],['gate.verify','/guard'],['students.view','/students'],['visitors.view','/visitors'],['staff.view','/staff'],['logs.view','/logs'],['notifications.view','/notifications'],['settings.manage','/settings']];
+  const choices = [['reports.view','/'],['passes.view','/gatepasses'],['gate.verify','/guard'],['bus-swaps.view','/bus-swaps'],['students.view','/students'],['visitors.view','/visitors'],['staff.view','/staff'],['logs.view','/logs'],['notifications.view','/notifications'],['settings.manage','/settings']];
   return choices.find(([key])=>can(user,key))?.[1] || '/no-access';
 };

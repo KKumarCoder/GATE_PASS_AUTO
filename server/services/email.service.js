@@ -1,7 +1,7 @@
 import nodemailer from "nodemailer";
 import { env, isEmailOTPConfigured } from "../config/env.js";
 
-export async function sendEmailMessage({ to, subject, text }) {
+export async function sendEmailMessage({ to, subject, text, html }) {
   if (!isEmailOTPConfigured()) {
     throw new Error("Email delivery is not configured.");
   }
@@ -15,7 +15,8 @@ export async function sendEmailMessage({ to, subject, text }) {
     socketTimeout: 12_000,
   });
   try {
-    await transporter.sendMail({ from: env.smtpFrom, to, subject, text });
+    const result = await transporter.sendMail({ from: env.smtpFrom, to, subject, text, ...(html ? {html} : {}) });
+    if(result?.rejected?.length)throw new Error("Recipient rejected by SMTP.");
   } catch {
     throw new Error("Email delivery failed. Check the SMTP configuration and mail server.");
   }

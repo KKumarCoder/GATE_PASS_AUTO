@@ -1,0 +1,23 @@
+.visitor-thermal-overlay{position:fixed;inset:0;z-index:1000;overflow:auto;display:flex;flex-direction:column;align-items:center;gap:16px;padding:24px 16px;background:#eef1f5}
+.visitor-thermal-controls{display:flex;justify-content:space-between;gap:12px;width:min(100%,420px);flex-shrink:0}
+.visitor-thermal-help,.visitor-thermal-error{width:min(100%,420px);font-size:12px;color:#334155}
+.visitor-thermal-error{color:#9a3933}
+.visitor-thermal-receipt{flex-shrink:0;page:visitorreceipt}
+.visitor-thermal-details{margin:0;padding:2.5mm 0 0;display:grid;gap:1.8mm}
+.visitor-thermal-details>div{display:grid;grid-template-columns:20mm minmax(0,1fr);gap:2mm;align-items:start}
+.visitor-thermal-details dt,.visitor-thermal-details dd{margin:0;color:#000;font-size:8pt}
+.visitor-thermal-details dd{text-align:right;font-weight:700;overflow-wrap:anywhere}
+.thermal-staff-id-badge{display:flex;align-items:center;justify-content:center;gap:2mm;margin:2.5mm auto 0;padding:1mm 3.5mm;font-size:9.5pt;border:1px dashed #000;border-radius:4px;width:fit-content}
+.thermal-staff-id-badge span{font-size:8pt;font-weight:700;letter-spacing:.5pt;color:#111}
+.thermal-staff-id-badge strong{font-size:11pt;font-weight:800;color:#000}
+.visitor-thermal-receipt .thermal-pass-id{display:flex!important}
+@media print{
+ @page visitorreceipt{size:72mm auto;margin:0}
+ html:has(.visitor-thermal-overlay),body:has(.visitor-thermal-overlay){width:72mm!important;margin:0!important;padding:0!important;height:auto!important;min-height:0!important;background:#fff!important;overflow:visible!important}
+ body:has(.visitor-thermal-overlay)>:not(.visitor-thermal-overlay){display:none!important}
+ body .visitor-thermal-overlay{position:static!important;display:block!important;width:72mm!important;height:auto!important;overflow:visible!important;padding:0!important;margin:0!important;background:#fff!important}
+ .visitor-thermal-overlay>:not(.visitor-thermal-receipt){display:none!important}
+ .visitor-thermal-overlay:not(.visitor-thermal-ready) .visitor-thermal-receipt{display:none!important}
+ .visitor-thermal-overlay .visitor-thermal-receipt{width:72mm!important;margin:0!important;border:0!important;box-shadow:none!important;break-inside:avoid;page-break-inside:avoid}
+ .visitor-thermal-receipt,.visitor-thermal-receipt *{color:#000!important;opacity:1!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}

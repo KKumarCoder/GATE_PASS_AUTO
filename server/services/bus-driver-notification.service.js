@@ -9,7 +9,7 @@ export async function sendBusDriverExitNotice(passId, gate, retry = false) {
   const pass = await GatePass.findOneAndUpdate(
     {
       _id: passId,
-      status: completedExit,
+      $or: [{status: completedExit}, {'recurring.enabled':true,'timing.actualExit':{$exists:true}}],
       busNumber: { $type: "string", $ne: "" },
       busDriverNoticeStatus: expectedStatus,
     },

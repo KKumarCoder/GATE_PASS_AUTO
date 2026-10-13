@@ -62,6 +62,10 @@ export const passSchema = z
       "SCHOOL_WORK",
       "OTHER",
     ]),
+    recurrence: z.enum(['SINGLE','WEEKLY','MONTHLY']).optional().default('SINGLE'),
+    validUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    skipParentVerification: z.boolean().optional().default(false),
+    verificationSkipReason: z.string().trim().max(500).optional(),
     reason: text,
     requestedExit: date,
     expectedReturn: date.optional().nullable(),
@@ -89,6 +93,11 @@ export const passSchema = z
       .optional(),
   })
   .strict()
+  .refine(v => v.recurrence === 'SINGLE' || Boolean(v.validUntil), 'Last valid date is required for a recurring pass.')
+  .refine(v => v.recurrence === 'SINGLE' || !v.expectedReturn, 'Recurring passes are daily departures without a same-day return.')
+  .refine(v => v.recurrence === 'SINGLE' || v.requestType !== 'EMERGENCY', 'Emergency passes cannot be recurring.')
+  .refine(v => !v.skipParentVerification || Boolean(v.verificationSkipReason), { message: "Reason is required when skipping parent verification.", path: ["verificationSkipReason"] })
+  .refine(v => !v.skipParentVerification || v.requestType !== "EMERGENCY", "Use the recorded emergency override for emergency passes.")
   .refine(
     (v) =>
       !v.expectedReturn ||
@@ -118,7 +127,7 @@ export const staffSchema = z
     staff: objectId,
     department: text,
     reason: text,
-    expectedReturn: date,
+    expectedReturn: date.nullable().optional(),
   })
   .strict();
 export const busStaffSchema = z.object({
@@ -135,6 +144,7 @@ export const userSchema = z
     name: text.max(100),
     email: z.string().email().toLowerCase(),
     employeeId: text.max(40),
+    mobile: z.union([phone,z.literal("")]).optional(),
     password: z.string().min(12).max(128),
     role: z.enum([
       "SUPER_ADMIN",
@@ -149,7 +159,7 @@ export const userSchema = z
     assignedGate: z.string().trim().max(60).optional(),
   })
   .strict();
-export const accessSchema = userSchema.pick({role:true, permissions:true, assignedGate:true}).partial().extend({active:z.boolean().optional()}).strict().refine(v=>Object.keys(v).length>0, "Choose an access change.");
+export const accessSchema = userSchema.pick({role:true, permissions:true, assignedGate:true, mobile:true}).partial().extend({active:z.boolean().optional()}).strict().refine(v=>Object.keys(v).length>0, "Choose an access change.");
 export const settingsSchema = z
   .object({
     schoolName: text,

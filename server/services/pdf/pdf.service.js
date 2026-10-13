@@ -73,7 +73,7 @@ export async function passPDF(pass, res, settings) {
   text('ADMISSION NO.',310,254,90,11,8,true);
   text(student.admissionNumber||'Unavailable',403,252,118,22,11);rule(403,277,118);
   field('Requested exit',date(pass.timing.requestedExit),38,287,483,26);
-  field('Expected return',pass.timing.expectedReturn?date(pass.timing.expectedReturn):'No return required',38,319,483,26);
+  field(pass.recurring?.enabled?'Reusable pass':'Expected return',pass.recurring?.enabled?`${pass.passDate} to ${pass.recurring.endDate}; daily from ${pass.recurring.exitTime} IST`:pass.timing.expectedReturn?date(pass.timing.expectedReturn):'No return required',38,319,483,26);
   field('Reason / purpose',pass.reason,38,351,483,51);
   field('Going with',`${pass.guardian.name} (${pass.guardian.type})`,38,408,483,26);
   field('Contact no.',pass.guardian.mobile || 'Not recorded',38,440,483,24);
@@ -81,7 +81,7 @@ export async function passPDF(pass, res, settings) {
   doc.roundedRect(546,216,258,248,7).lineWidth(1).strokeColor(navy).stroke();
   doc.roundedRect(552,222,246,24,3).fill(navy);
   text('SECURITY VERIFICATION',558,230,234,12,10,true,'#ffffff','center');
-  const verification = pass.parentVerification.method === 'DEVELOPMENT_OTP' ? 'DEVELOPMENT TEST ONLY' : pass.parentVerification.verified ? 'PARENT VERIFIED' : pass.isEmergency ? 'EMERGENCY OVERRIDE RECORDED' : 'PARENT VERIFICATION PENDING';
+  const verification = pass.parentVerification.method === 'MANUAL_OVERRIDE' ? 'VERIFICATION SKIPPED' : pass.parentVerification.method === 'DEVELOPMENT_OTP' ? 'DEVELOPMENT TEST ONLY' : pass.parentVerification.verified ? 'PARENT VERIFIED' : pass.isEmergency ? 'EMERGENCY OVERRIDE RECORDED' : 'PARENT VERIFICATION PENDING';
   if(photo) doc.image(photo,559,257,{fit:[42,45],align:'center',valign:'center'});
   text(verification,photo?611:559,259,photo?179:231,26,10,true);
   text(pass.approval.approvedBy?.name ? `Approved by ${pass.approval.approvedBy.name}` : 'Awaiting administrator approval',photo?611:559,287,photo?179:231,25,9);

@@ -77,7 +77,9 @@ export function GatePassDocument({pass,qr}) {
         </div>
       </section>
       <aside className="printout-verification">
-        <div className="printout-verification-title"><strong>SECURITY VERIFICATION</strong><span>{pass.parentVerification?.verified?'PARENT VERIFIED':'PENDING'}</span></div>
+        {pass.recurring?.enabled&&<p><strong>{pass.recurring.period} REUSABLE PASS</strong><br/>{pass.passDate} – {pass.recurring.endDate} (inclusive)<br/>Daily exit from {pass.recurring.exitTime} IST · once per day</p>}
+        <div className="printout-verification-title"><strong>SECURITY VERIFICATION</strong><span>{pass.parentVerification?.method==='MANUAL_OVERRIDE'?'VERIFICATION SKIPPED':pass.parentVerification?.verified?'PARENT VERIFIED':'PENDING'}</span></div>
+        {pass.parentVerification?.method==='MANUAL_OVERRIDE'&&<p><strong>Reason for skipping verification:</strong> {pass.parentVerification.skipReason}</p>}
         {qr?<img className="printout-qr" src={qr} alt="Secure gate pass QR code"/>:<div className="printout-qr-placeholder">QR AVAILABLE AFTER APPROVAL</div>}
         <p>Scan to verify the pass status and student details before departure.</p>
         <div className="printout-security"><span>PASS STATUS</span><strong>{status}</strong><span>ACTUAL EXIT</span><strong>{formatDate(pass.timing.actualExit)}</strong><span>EXIT GATE</span><strong>{pass.timing.exitGate||'Not recorded'}</strong></div>

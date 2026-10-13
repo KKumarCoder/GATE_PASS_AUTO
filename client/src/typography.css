@@ -1,0 +1,10 @@
+/* Consistent bold text across the app, dialogs, charts and printable passes. */
+body, body * {
+  font-weight: 700 !important;
+}
+body :is(h1, h2, h3, h4, h5, h6, strong, b) {
+  font-weight: 800 !important;
+}
+input::placeholder, textarea::placeholder {
+  font-weight: 700 !important;
+}

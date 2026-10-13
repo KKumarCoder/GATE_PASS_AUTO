@@ -1,3 +1,4 @@
+import PendingStaffPasses from '../components/PendingStaffPasses';
 import {can} from '../../../shared/access.mjs';
 import AppLoader from '../components/AppLoader';
 import {useEffect,useState} from 'react';
@@ -27,6 +28,7 @@ export function Passes({pending=false,outside=false}){
   }
   function resetPage(action){setPage(1);action();}
   return <>
+    {pending&&can(user,'staff.approve')&&<PendingStaffPasses/>}
     <PageTitle title={outside?'Students outside campus':pending?'Pending requests':'Gate passes'} description={outside?'Track departures and expected returns. Overdue students need your attention.':'Every request, approval and movement in one place.'}>{can(user,'passes.create')&&<Link className="button primary" to="/gatepasses/new"><Plus size={17}/> New gate pass</Link>}</PageTitle>
     <section className="card table-card">
       {!outside&&<div className="filter-bar">
@@ -46,8 +48,16 @@ const localDate=offset=>{const d=new Date(Date.now()+offset);return new Date(d.g
 export function NewPass(){
   const [params]=useSearchParams(),[search,setSearch]=useState(''),[student,setStudent]=useState(null),[step,setStep]=useState(1),[createdPass,setCreatedPass]=useState(null),navigate=useNavigate(),{user}=useAuth();
   const q=useDebounce(search),query=useData(search?`/students?q=${encodeURIComponent(q)}&status=ACTIVE`:null),drivers=useData('/bus-drivers');
-  const {register,handleSubmit,setValue,watch,formState:{isSubmitting}}=useForm({defaultValues:{requestType:'SHORT_LEAVE',requestedExit:localDate(60000),expectedReturn:localDate(3600000),returnRequired:true,guardianType:'Father',busNumber:''}});
-  const guardianType=watch('guardianType'),type=watch('requestType');
+  const {register,handleSubmit,setValue,watch,formState:{isSubmitting,errors}}=useForm({defaultValues:{recurrence:'SINGLE',requestType:'PARENT_REQUEST',requestedExit:localDate(60000),expectedReturn:'',returnRequired:false,guardianType:'Father',busNumber:''}});
+  const guardianType=watch('guardianType'),type=watch('requestType'),skipVerification=type!=='EMERGENCY'&&watch('skipParentVerification');
+  const recurrence=watch('recurrence'),requestedExit=watch('requestedExit'),isRecurring=recurrence!=='SINGLE';
+  useEffect(()=>{
+    if(!isRecurring||!requestedExit)return;
+    const start=new Date(`${requestedExit.slice(0,10)}T12:00:00Z`),end=new Date(start);
+    if(recurrence==='WEEKLY')end.setUTCDate(end.getUTCDate()+6);
+    else {const day=end.getUTCDate();end.setUTCDate(1);end.setUTCMonth(end.getUTCMonth()+1);const last=new Date(Date.UTC(end.getUTCFullYear(),end.getUTCMonth()+1,0)).getUTCDate();end.setUTCDate(Math.min(day,last));end.setUTCDate(end.getUTCDate()-1);}
+    setValue('validUntil',end.toISOString().slice(0,10));setValue('returnRequired',false);if(watch('requestType')==='EMERGENCY')setValue('requestType','PARENT_REQUEST');
+  },[recurrence,requestedExit,isRecurring,setValue]);
   useEffect(()=>{if(params.get('student'))get(`/students/${params.get('student')}`).then(setStudent).catch(()=>{});},[params]);
   useEffect(()=>{if(student){setValue('guardianName',guardianType==='Father'?student.fatherName:guardianType==='Mother'?student.motherName:guardianType==='Guardian'?student.guardianName:guardianType==='Self'?student.name:'');setValue('guardianMobile',['Father','Mother','Guardian'].includes(guardianType)?student.primaryMobile:'');}},[student,guardianType,setValue]);
   return <>
@@ -60,33 +70,42 @@ export function NewPass(){
       <div className="form-footer"><button className="button primary" disabled={!student} onClick={()=>setStep(2)}>Continue to departure details →</button></div>
     </>:<form onSubmit={handleSubmit(async values=>{
       const body={student:student._id,busNumber:values.busNumber||'',requestType:values.requestType,reason:values.reason,requestedExit:new Date(values.requestedExit).toISOString(),expectedReturn:values.returnRequired?new Date(values.expectedReturn).toISOString():null,guardian:{type:values.guardianType,name:values.guardianName,mobile:values.guardianMobile||'',relationship:values.guardianType}};
+      body.recurrence=values.recurrence;if(isRecurring){body.validUntil=values.validUntil;body.expectedReturn=null;}
+      if(skipVerification){body.skipParentVerification=true;body.verificationSkipReason=values.verificationSkipReason.trim();}
       if(type==='EMERGENCY')body.emergency={authority:values.authority,contactAttempt:values.contactAttempt};
       try{const result=await act(()=>post('/gatepasses',body),'Request created');setCreatedPass({...result,student});}catch{}
     })}>
       <div className="section-head"><h2>Departure details</h2><button type="button" className="text-link" onClick={()=>setStep(1)}>Change student</button></div>
       <div className="person selected-student"><Avatar name={student.name} photo={student.photo}/><div><strong>{student.name}</strong><small>{student.className}-{student.section} · {student.admissionNumber}</small></div></div>
       <div className="form-grid">
-        <Field label="Gate pass type"><select {...register('requestType')}>{['EARLY_LEAVE','SHORT_LEAVE','MEDICAL',...(can(user,'passes.emergency')?['EMERGENCY']:[]),'PARENT_REQUEST','SCHOOL_WORK','OTHER'].map(s=><option key={s} value={s}>{pretty(s)}</option>)}</select></Field>
-        <Field label="Requested exit"><input type="datetime-local" required {...register('requestedExit')}/></Field>
+        <Field label="Pass validity"><select {...register('recurrence')}><option value="SINGLE">Single day / one exit</option><option value="WEEKLY">Weekly reusable pass</option><option value="MONTHLY">Monthly reusable pass</option></select></Field>
+        {isRecurring&&<Field label="Last valid date (inclusive)"><input type="date" required min={requestedExit?.slice(0,10)} {...register('validUntil')}/></Field>}
+        <Field label="Gate pass type"><select {...register('requestType')}>{['EARLY_LEAVE','SHORT_LEAVE','MEDICAL',...(can(user,'passes.emergency')&&!isRecurring?['EMERGENCY']:[]),'PARENT_REQUEST','SCHOOL_WORK','OTHER'].map(s=><option key={s} value={s}>{pretty(s)}</option>)}</select></Field>
+        <Field label={isRecurring?"Start date and daily exit time (IST)":"Requested exit"}><input type="datetime-local" required {...register('requestedExit')}/></Field>
         <Field label="Bus number (driver notification)"><select {...register('busNumber')}><option value="">No bus / do not notify a driver</option>{drivers.data?.items.map(driver=><option key={driver.busNumber} value={driver.busNumber} disabled={!driver.emailConfigured}>Bus {driver.busNumber} · {driver.driverName}{driver.emailConfigured?'':' · email unavailable'}</option>)}</select></Field>
         <Field label="Accompanying person"><select {...register('guardianType')}>{['Father','Mother','Guardian','Self','Teacher','Other'].map(s=><option key={s}>{s}</option>)}</select></Field>
         <Field label="Authorized person’s name"><input required {...register('guardianName')}/></Field>
         <Field label="Accompanying person’s mobile"><input required={guardianType==='Other'} placeholder="+91XXXXXXXXXX" {...register('guardianMobile')}/></Field>
-        <Field label="Expected return"><input type="datetime-local" disabled={!watch('returnRequired')} required={watch('returnRequired')} {...register('expectedReturn')}/></Field>
+        <Field label="Expected return">{!isRecurring&&watch('returnRequired')?<input type="datetime-local" required {...register('expectedReturn')}/>:<input type="text" value="None" disabled readOnly/>}</Field>
       </div>
-      <label className="checkbox"><input type="checkbox" {...register('returnRequired')}/> Student will return to campus</label>
+      <label className="checkbox"><input type="checkbox" disabled={isRecurring} {...register('returnRequired')}/> Student will return to campus</label>
+      {isRecurring&&<div className="note">The same QR allows one exit per day, at or after the selected time, until the last valid date (IST). Each exit is recorded separately. Parent verification and administrator approval are completed once for the whole period. This pass does not track same-day returns.</div>}
       <Field label="Reason for departure"><textarea rows={3} maxLength={500} required {...register('reason')}/></Field>
+      {type!=='EMERGENCY'&&<>
+        <label className="checkbox"><input type="checkbox" {...register('skipParentVerification')}/> Without email / OTP verification</label>
+        {skipVerification&&<div className="warning-box"><p>Use this option when the parent cannot complete email or OTP verification. Administrator approval is still required.</p><Field label="Reason for skipping verification (required)" error={errors.verificationSkipReason?.message}><textarea rows={3} required maxLength={500} {...register('verificationSkipReason',{validate:value=>!skipVerification||Boolean(value?.trim())||'Please enter a reason for skipping verification.'})}/></Field></div>}
+      </>}
       {type==='EMERGENCY'&&<div className="warning-box"><strong>Recorded emergency override</strong><p>Parent verification is bypassed only with a recorded contact attempt. Administrator approval is still required.</p><Field label="Approving authority"><input required {...register('authority')}/></Field><Field label="Parent contact attempt and outcome"><textarea required {...register('contactAttempt')}/></Field></div>}
-      <div className="form-footer"><button type="button" className="button secondary" onClick={()=>setStep(1)}>Back</button><button className="button primary" disabled={isSubmitting}>{isSubmitting&&<AppLoader inline label="Processing…"/>}Create request & verify parent</button></div>
+      <div className="form-footer"><button type="button" className="button secondary" onClick={()=>setStep(1)}>Back</button><button className="button primary" disabled={isSubmitting}>{isSubmitting&&<AppLoader inline label="Processing…"/>}{skipVerification||type==='EMERGENCY'?'Create request for admin approval':'Create request & verify parent'}</button></div>
     </form>}</section>
-    <aside className="card help-card"><ShieldCheck size={30}/><h2>Safety at every step</h2><p>Parent verification is sent only to the mobile number registered in the student profile.</p><ol><li>Select an active student.</li><li>Record departure and guardian details.</li><li>Complete parent approval.</li><li>Get administrator approval.</li><li>Security verifies the pass at the gate.</li></ol><div className="note">A request does not authorize departure. Only an approved, valid pass can be used at the gate.</div></aside></div>
+    <aside className="card help-card"><ShieldCheck size={30}/><h2>Safety at every step</h2><p>Parent verification is sent only to the mobile number registered in the student profile.</p><ol><li>Select an active student.</li><li>Record departure and guardian details.</li><li>Complete parent approval or record a reason for skipping verification.</li><li>Get administrator approval.</li><li>Security verifies the pass at the gate.</li></ol><div className="note">A request does not authorize departure. Only an approved, valid pass can be used at the gate.</div></aside></div>
     {createdPass&&<Modal title="Gate Pass Created Successfully" onClose={()=>{setCreatedPass(null);navigate('/gatepasses');}}>
       <div className="pass-created-summary">
         <div className="pass-created-icon"><CheckCircle2 size={30}/></div>
         <p><strong>Student:</strong> {createdPass.student.name}</p>
         <p><strong>Class:</strong> {createdPass.student.className}-{createdPass.student.section}</p>
         <p><strong>Gate Pass ID:</strong> {createdPass.gatePassNumber}</p>
-        <p className="muted">The secure QR code is available after parent verification and administrator approval.</p>
+        <p className="muted">{createdPass.status==='ADMIN_APPROVAL_PENDING'?'Parent verification was skipped. The secure QR code is available after administrator approval.':'The secure QR code is available after parent verification and administrator approval.'}</p>
       </div>
       <div className="form-footer">
         <button className="button secondary" onClick={()=>navigate(`/gatepasses/${createdPass._id}`)}>VIEW PASS</button>
@@ -107,6 +126,7 @@ export function PassDetail(){
     <DataState query={query}>{p&&<div className="form-layout gate-pass-detail-layout">
       <GatePassDocument pass={p} settings={settings.data} qr={qr.data?.image}/>
       <aside className="card no-print">
+        {p.recurring?.enabled&&<div className="note"><strong>{pretty(p.recurring.period)} reusable pass</strong><p>{p.passDate} to {p.recurring.endDate} (inclusive), daily exit from {p.recurring.exitTime} IST.</p><strong>Daily exit history</strong>{p.recurring.exits?.length?<ul>{p.recurring.exits.map(exit=><li key={exit._id||exit.date}>{time(exit.exitedAt)} · {exit.gate}</li>)}</ul>:<p>No exits recorded yet.</p>}</div>}
         <h2>Pass actions</h2><p className="muted">Actions follow the current approval stage.</p>
         {consoleOTP&&<div className="note" role="status"><strong>Development OTP mode</strong><p>Generate an OTP, then copy it from the backend terminal into the field below. No parent OTP is sent through WhatsApp.</p></div>}
         {creator&&p.status==='PARENT_VERIFICATION_PENDING'&&<div className="action-stack">

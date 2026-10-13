@@ -32,6 +32,7 @@ export const User = make("User", {
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true, lowercase: true },
   employeeId: { type: String, required: true, unique: true },
+  mobile: { type: String, trim: true },
   passwordHash: { type: String, required: true, select: false },
   role: { type: String, enum: roles, required: true },
   permissions: { type: [String], default: undefined },
@@ -97,6 +98,72 @@ export const BusDriver = make(
   },
   [[{ staffId: 1 }, { unique: true, sparse: true }]],
 );
+export const BusSwap = make("BusSwap", {
+  swapNumber: { type: String, unique: true, required: true },
+  student: ref("Student"),
+  studentName: String,
+  admissionNumber: String,
+  className: String,
+  date: { type: String, required: true },
+  fromBus: { type: String, required: true },
+  toBus: { type: String, required: true },
+  fromDriver: String,
+  toDriver: String,
+  reason: String,
+  parentName: String,
+  parentRequest: String,
+  requestedBy: ref("User"),
+  approvedBy: ref("User"),
+  approvedAt: Date,
+  parentApproval: { verifiedBy: ref("User"), mobile: String, verifiedAt: Date, contextHash: String },
+  principalApproval: { principal: ref("User"), name: String, email: String, mobile: String, verifiedAt: Date },
+  decidedBy: ref("User"),
+  decidedAt: Date,
+  decisionReason: String,
+  status: { type: String, enum: ["PENDING", "APPROVED", "REJECTED", "CANCELLED"], default: "PENDING" },
+}, [
+  [{student:1,date:1}, {unique:true,partialFilterExpression:{status:{$in:["PENDING","APPROVED"]}}}],
+  [{date:1,status:1}, {}],
+]);
+export const BusSwapOTP = make("BusSwapOTP", {
+  busSwap: { ...ref("BusSwap"), unique: true },
+  principal: ref("User"),
+  mobile: String,
+  contextHash: String,
+  hashedOTP: { type: String, select: false },
+  challenge: String,
+  sentAt: Date,
+  deliveredAt: Date,
+  expiresAt: Date,
+  attempts: { type: Number, default: 0 },
+  consumedAt: Date,
+});
+export const BusSwapParentOTP = make("BusSwapParentOTP", {
+  busSwap: { ...ref("BusSwap"), unique: true },
+  student: ref("Student"),
+  mobile: String,
+  contextHash: String,
+  hashedOTP: { type: String, select: false },
+  challenge: String,
+  sentAt: Date,
+  deliveredAt: Date,
+  expiresAt: Date,
+  attempts: { type: Number, default: 0 },
+  consumedAt: Date,
+});
+export const BusSwapEmail = make("BusSwapEmail", {
+  busSwap: ref("BusSwap"),
+  event: { type: String, enum: ["APPROVED", "CANCELLED"] },
+  audience: { type: String, enum: ["PRINCIPAL", "PARENT", "FROM_DRIVER", "TO_DRIVER"] },
+  recipient: String,
+  recipientName: String,
+  status: { type: String, enum: ["PENDING", "SENDING", "SENT", "FAILED", "SKIPPED"], default: "PENDING" },
+  attempts: { type: Number, default: 0 },
+  nextAttemptAt: Date,
+  lockedAt: Date,
+  sentAt: Date,
+  error: String,
+}, [[{busSwap:1,event:1,audience:1},{unique:true}], [{status:1,nextAttemptAt:1},{}]]);
 export const GatePass = make(
   "GatePass",
   {
@@ -111,6 +178,14 @@ export const GatePass = make(
     requestType: String,
     reason: String,
     passDate: String,
+    recurring: {
+      enabled: { type: Boolean, default: false },
+      period: String,
+      endDate: String,
+      exitTime: String,
+      lastExitDate: String,
+      exits: [{ date: String, exitedAt: Date, gate: String, performedBy: ref("User") }],
+    },
     guardian: {
       type: { type: String },
       name: String,
@@ -122,6 +197,9 @@ export const GatePass = make(
       verified: { type: Boolean, default: false },
       method: String,
       verifiedAt: Date,
+      skipReason: { type: String, trim: true, maxlength: 500 },
+      skippedBy: ref("User"),
+      skippedAt: Date,
     },
     approval: {
       status: String,
@@ -169,7 +247,7 @@ export const OTPVerification = make(
   {
     deliveryMethod: {
       type: String,
-      enum: ["WHATSAPP", "TWILIO_SMS", "EMAIL", "DEVELOPMENT_CONSOLE"],
+      enum: ["WHATSAPP", "APITXT_SMS", "EMAIL", "DEVELOPMENT_CONSOLE"],
       default: "WHATSAPP",
     },
     gatePass: { ...ref("GatePass"), unique: true },
@@ -218,11 +296,23 @@ export const VisitorPass = make(
     [{ "qr.tokenHash": 1 }, { unique: true, sparse: true }],
   ],
 );
+export const StaffMember = make("StaffMember", {
+  employeeId: {type:String,required:true,unique:true},
+  name: {type:String,required:true},
+  staffRole: String, designation: String, mobile: String, email: String, photo: String, deletedAt: Date,
+  dateOfBirth: Date, dateOfJoining: Date, address: String,
+  active: {type:Boolean,default:true}, source: String,
+});
+export const StaffOTP = make('StaffOTP', {staff:{type:Schema.Types.ObjectId,unique:true},requestedBy:ref('User'),fingerprint:String,digest:String,channel:String,sentAt:Date,expiresAt:Date,attempts:Number,delivered:Boolean,consumed:Boolean});
 export const StaffPass = make(
   "StaffPass",
   {
     passNumber: { type: String, unique: true },
-    staff: ref("User"),
+    staff: {type:Schema.Types.ObjectId,refPath:"staffModel"},
+    staffModel: {type:String,enum:["User","StaffMember"],default:"User"},
+    employeeId: String,
+    passDate: String,
+    staffVerifiedAt: Date,
     department: String,
     reason: String,
     expectedReturn: Date,
@@ -235,8 +325,22 @@ export const StaffPass = make(
       enum: ["REQUESTED", "APPROVED", "EXITED", "RETURNED"],
       default: "REQUESTED",
     },
+    qr: { tokenHash: String, generatedAt: Date },
   },
-  [[{ createdAt: -1 }, {}]],
+  [
+    [{ createdAt: -1 }, {}],
+    [{ "qr.tokenHash": 1 }, { unique: true, sparse: true }],
+    [
+      { employeeId: 1, passDate: 1 },
+      {
+        unique: true,
+        partialFilterExpression: {
+          employeeId: { $type: "string" },
+          passDate: { $type: "string" },
+        },
+      },
+    ],
+  ],
 );
 export const GateEvent = make(
   "GateEvent",
@@ -272,6 +376,7 @@ export const Notification = make(
   "Notification",
   {
     gatePass: ref("GatePass"),
+    busSwap: ref("BusSwap"),
     recipient: String,
     event: String,
     status: {

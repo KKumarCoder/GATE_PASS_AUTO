@@ -216,14 +216,19 @@ export default function GateScanner() {
           <div className="scanner-result-icon success"><CheckCircle2 size={76}/></div>
           <div className="scanner-result-heading">EXIT ALLOWED</div>
           <p className="scanner-result-message">Gate Pass verified and exit recorded.</p>
-          <div className="scanner-student-name">{result.student.name}</div>
+          <div className="scanner-student-name">{result.staff?.name || result.student?.name}</div>
           <div className="scanner-facts">
-            <div><span>Admission No.</span><strong>{result.student.admissionNo}</strong></div>
-            <div><span>Class</span><strong>{result.student.className}-{result.student.section}</strong></div>
-            <div><span>Gate Pass</span><strong>{result.gatePass.passNumber}</strong></div>
-            <div><span>Reason</span><strong>{result.gatePass.reason}</strong></div>
-            <div><span>Exit time</span><strong>{new Date(result.gatePass.exitTime).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'})}</strong></div>
-            <div><span>Gate</span><strong>{result.gatePass.gate}</strong></div>
+            {result.staff ? <>
+              <div><span>Staff ID</span><strong>{result.staff.employeeId}</strong></div>
+              <div><span>Department</span><strong>{result.staff.department}</strong></div>
+            </> : <>
+              <div><span>Admission No.</span><strong>{result.student?.admissionNo}</strong></div>
+              <div><span>Class</span><strong>{result.student?.className}-{result.student?.section}</strong></div>
+            </>}
+            <div><span>Gate Pass</span><strong>{result.gatePass?.passNumber}</strong></div>
+            <div><span>Reason</span><strong>{result.gatePass?.reason}</strong></div>
+            <div><span>Exit time</span><strong>{new Date(result.gatePass?.exitTime).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'})}</strong></div>
+            <div><span>Gate</span><strong>{result.gatePass?.gate}</strong></div>
           </div>
         </>}
         {inResult && state === 'EXIT_DENIED' && <>

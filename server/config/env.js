@@ -19,7 +19,7 @@ export const env = {
     5,
     Math.max(1, Number(process.env.OTP_EXPIRY_MINUTES || 10)),
   ),
-  otpDeliveryMode: process.env.OTP_DELIVERY_MODE || "whatsapp",
+  otpDeliveryMode: process.env.OTP_DELIVERY_MODE || "sms",
   smtpHost: process.env.SMTP_HOST || "",
   smtpPort: Number(process.env.SMTP_PORT || 587),
   smtpUser: process.env.SMTP_USER || "",
@@ -38,11 +38,8 @@ export function isEmailOTPConfigured() {
   );
 }
 export function isSmsOTPConfigured() {
-  return Boolean(
-    process.env.TWILIO_ACCOUNT_SID &&
-      process.env.TWILIO_AUTH_TOKEN &&
-      process.env.TWILIO_VERIFY_SERVICE_SID,
-  );
+  return Boolean(process.env.APITXT_AUTH_KEY?.trim()) &&
+    (!process.env.APITXT_TEMPLATE_ID || /^[1-9]\d*$/.test(process.env.APITXT_TEMPLATE_ID));
 }
 export function validateOTPDeliveryMode(config = env) {
   if (!["whatsapp", "sms", "console"].includes(config.otpDeliveryMode)) {
@@ -66,15 +63,6 @@ export function validateEnvironment() {
   validateOTPDeliveryMode();
   if (!env.mongo)
     throw new Error("MONGODB_URI is required (replica set / Atlas).");
-  if (env.otpDeliveryMode === "sms") {
-    for (const key of [
-      "TWILIO_ACCOUNT_SID",
-      "TWILIO_AUTH_TOKEN",
-      "TWILIO_VERIFY_SERVICE_SID",
-    ])
-      if (!process.env[key])
-        throw new Error(`${key} is required when OTP_DELIVERY_MODE=sms.`);
-  }
   for (const key of ["access", "refresh"])
     if (!env[key] || env[key].length < 32)
       throw new Error(`JWT ${key} secret must have at least 32 characters.`);

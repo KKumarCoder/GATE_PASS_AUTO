@@ -14,3 +14,45 @@
 @keyframes scanner-pulse{50%{opacity:.35;transform:scale(.8)}}
 @media(max-width:720px){.scanner-kiosk{padding:18px}.scanner-topbar{align-items:flex-start;flex-direction:column}.scanner-controls{width:100%;flex-wrap:wrap;gap:10px}.scanner-status{margin-left:auto}.scanner-panel{min-height:460px;margin:30px auto 20px;padding:30px 19px}.scanner-facts{grid-template-columns:1fr 1fr}.scanner-footer{flex-direction:column}.scanner-test{flex-wrap:wrap}.scanner-test input{order:2;flex-basis:100%}}
 @media(prefers-reduced-motion:reduce){.scanner-status i{animation:none}}
+/* Soft 3D kiosk: high-contrast labels and distinct movement outcomes. */
+@media screen {
+.scanner-kiosk{--scan-surface:#eaf0f5;--scan-shadow:#c7d1dc;--scan-light:#fff;background:var(--scan-surface);color:#263b55;color-scheme:light}
+.scanner-kiosk .scanner-topbar{padding:20px 24px;border:1px solid #ffffffc9;border-radius:24px;background:var(--scan-surface);box-shadow:8px 8px 20px var(--scan-shadow),-8px -8px 20px var(--scan-light)}
+.scanner-kiosk .scanner-brand img{object-fit:contain;padding:4px;width:58px;height:62px;border-radius:16px;box-shadow:4px 4px 9px var(--scan-shadow),-4px -4px 9px var(--scan-light)}
+.scanner-kiosk .scanner-brand strong{color:#263b55;letter-spacing:.06em}
+.scanner-kiosk .scanner-brand span,.scanner-kiosk .scanner-controls label{color:#526781}
+.scanner-kiosk .scanner-controls select,.scanner-kiosk .scanner-test input{background:var(--scan-surface);color:#263b55;border:1px solid #fff;border-radius:15px;box-shadow:inset 4px 4px 8px var(--scan-shadow),inset -4px -4px 8px var(--scan-light)}
+.scanner-kiosk .scanner-status{color:#17634d;border:1px solid #fff;background:var(--scan-surface);box-shadow:4px 4px 9px var(--scan-shadow),-4px -4px 9px var(--scan-light)}
+.scanner-kiosk .scanner-status i{background:#16835c;box-shadow:0 0 0 4px #16835c15}
+.scanner-kiosk .scanner-status-exit_denied,.scanner-kiosk .scanner-status-server_error{color:#a22737}
+.scanner-kiosk .scanner-status-exit_denied i,.scanner-kiosk .scanner-status-server_error i{background:#bd3243;box-shadow:0 0 0 4px #bd324315}
+.scanner-kiosk .scanner-status-verifying,.scanner-kiosk .scanner-status-scanning{color:#875600}
+.scanner-kiosk .scanner-status-verifying i,.scanner-kiosk .scanner-status-scanning i{background:#aa740e;box-shadow:0 0 0 4px #aa740e15}
+.scanner-kiosk .scanner-logout{padding:12px 16px;border-radius:16px;color:#526781;box-shadow:4px 4px 9px var(--scan-shadow),-4px -4px 9px var(--scan-light);transition:translate .2s,box-shadow .2s}
+.scanner-kiosk .scanner-panel{min-height:500px;margin-top:48px;background:var(--scan-surface);border:1px solid #fff;border-radius:32px;box-shadow:16px 16px 36px var(--scan-shadow),-16px -16px 36px var(--scan-light);transition:border-color .25s,background .25s}
+.scanner-kiosk .scanner-panel h1{color:#263b55;line-height:1.15;text-shadow:1px 2px 0 #fff}
+.scanner-kiosk .scanner-eyebrow{color:#14799c;letter-spacing:.13em}
+.scanner-kiosk .scanner-intro,.scanner-kiosk .scanner-hint{color:#526781;line-height:1.6}
+.scanner-kiosk .scanner-visual{width:160px;height:160px;border-radius:35px;color:#168aca;background:var(--scan-surface);border:1px solid #fff;box-shadow:10px 10px 22px var(--scan-shadow),-10px -10px 22px var(--scan-light);transition:translate .3s,box-shadow .3s}
+.scanner-kiosk .scanner-frame{border-color:#20a4b2}
+.scanner-kiosk .scanner-ready-text{color:#157455;font-size:clamp(20px,3vw,25px)}
+.scanner-kiosk .scanner-visual.is-verifying{color:#926300;box-shadow:inset 6px 6px 14px var(--scan-shadow),inset -6px -6px 14px var(--scan-light)}
+.scanner-kiosk .scanner-panel-exit_allowed{background:#e2f2eb;border:2px solid #2a8d66}
+.scanner-kiosk .scanner-panel-exit_denied,.scanner-kiosk .scanner-panel-server_error{background:#fae9e8;border:2px solid #be4350}
+.scanner-kiosk .scanner-result-icon.success,.scanner-kiosk .scanner-panel-exit_allowed .scanner-result-heading{color:#116544}
+.scanner-kiosk .scanner-result-icon.denied,.scanner-kiosk .scanner-panel-exit_denied .scanner-result-heading,.scanner-kiosk .scanner-panel-server_error .scanner-result-heading{color:#a42534}
+.scanner-kiosk .scanner-result-icon.unavailable,.scanner-kiosk .scanner-result-code{color:#855200}
+.scanner-kiosk .scanner-result-message,.scanner-kiosk .scanner-student-name{color:#263b55}
+.scanner-kiosk .scanner-facts div{border:1px solid #ffffffb0;background:#ffffff60;border-radius:16px;box-shadow:3px 3px 8px #243b5320,inset 1px 1px 0 #fff}
+.scanner-kiosk .scanner-facts span,.scanner-kiosk .scanner-auto-reset{color:#526781}
+.scanner-kiosk .scanner-test{background:var(--scan-surface);border:1px solid #fff;border-radius:20px;padding:16px;box-shadow:6px 6px 15px var(--scan-shadow),-6px -6px 15px var(--scan-light)}
+.scanner-kiosk .scanner-test label{color:#526781}
+.scanner-kiosk .scanner-test input::placeholder{color:#526781}
+.scanner-kiosk .scanner-test button{background:linear-gradient(110deg,#20aeb2,#1676ef);border-radius:14px;padding:12px 18px;box-shadow:4px 4px 9px var(--scan-shadow),-4px -4px 9px var(--scan-light);transition:translate .2s,filter .2s}
+.scanner-kiosk .scanner-footer{color:#526781;margin-top:auto;padding:18px 0 0}
+.scanner-kiosk :is(select,button,input:not(.scanner-capture)):focus-visible{outline:3px solid #168cda;outline-offset:4px}
+@media(hover:hover) and (pointer:fine){.scanner-kiosk .scanner-logout:hover,.scanner-kiosk .scanner-test button:hover{translate:0 -2px;filter:brightness(1.04)}.scanner-kiosk .scanner-visual:hover{translate:0 -4px}}
+.scanner-kiosk .scanner-logout:active,.scanner-kiosk .scanner-test button:active{translate:0 1px}
+@media(max-width:720px){.scanner-kiosk .scanner-topbar{padding:17px}.scanner-kiosk .scanner-panel{min-height:440px;margin-top:28px;border-radius:24px}.scanner-kiosk .scanner-brand strong{font-size:12px}.scanner-kiosk .scanner-controls{gap:12px}.scanner-kiosk .scanner-logout{padding:10px}.scanner-kiosk .scanner-controls select{min-width:130px}.scanner-kiosk .scanner-facts{grid-template-columns:1fr}.scanner-kiosk .scanner-result-heading{font-size:30px}}
+@media(prefers-reduced-motion:reduce){.scanner-kiosk *{transition:none!important;animation:none!important;translate:none!important}}
+}

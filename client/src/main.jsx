@@ -15,6 +15,7 @@ import { Loading } from "./components/UI";
 import AppLayout from "./layouts/AppLayout";
 import { Login, ResetPassword, ParentApproval, ParentPass } from "./pages/Auth";
 const Dashboard = lazy(() => import("./pages/Dashboard"));
+import BusSwaps from './pages/BusSwaps';
 import Students from "./pages/Students";
 import { Passes, NewPass, PassDetail } from "./pages/Passes";
 const Guard = lazy(() => import("./pages/Guard"));
@@ -26,10 +27,14 @@ import {
   Logs,
   Reports,
   Settings,
+  BusStaff,
   GlobalSearch,
 } from "./pages/Operations";
 import "./styles.css";
 import "./workspace.css";
+import "./soft-depth.css";
+import "./typography.css";
+import "./responsive.css";
 const home = homeFor;
 function Protected({ permission, children }) {
   const { user, loading } = useAuth(),
@@ -78,6 +83,7 @@ function App() {
                   </Protected>
                 }
               />
+              <Route path="bus-swaps" element={<Protected permission="bus-swaps.view"><BusSwaps /></Protected>} />
               <Route
                 path="students"
                 element={
@@ -160,6 +166,10 @@ function App() {
                     <Reports />
                   </Protected>
                 }
+              />
+              <Route
+                path="bus-staff"
+                element={<Protected permission="settings.manage"><BusStaff /></Protected>}
               />
               <Route
                 path="settings"

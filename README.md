@@ -12,11 +12,11 @@ Gate-pass lists support filtering by requested-exit date, status, and pass numbe
 
 Admins can set a new password directly from **Users & access** without issuing a recovery link. Passwords must be at least 12 characters; changing a staff password revokes their active sessions and invalidates outstanding recovery links.
 
-## 58mm Gate Pass printing
+## 80mm roll Gate Pass printing (72mm driver page)
 
-After a Gate Pass request is created, the success dialog offers **PRINT GATE PASS**, **VIEW PASS**, and **CLOSE**. A request receives its secure QR only after parent verification and administrator approval; the 58mm print page keeps printing unavailable until the same approved pass QR is loaded. Reprint from the pass list or details page uses that existing pass and QR without creating another record.
+After a Gate Pass request is created, the success dialog offers **PRINT GATE PASS**, **VIEW PASS**, and **CLOSE**. A request receives its secure QR only after parent verification and administrator approval; the thermal print page keeps printing unavailable until the same approved pass QR is loaded. Reprint from the pass list or details page uses that existing pass and QR without creating another record.
 
-The print view uses browser-native HTML/CSS printing at 58mm width. Click **PRINT GATE PASS** to open the normal browser print dialog and select the locally installed Billing Buddy 58mm printer. First pair/install the printer in the school computer's Windows/macOS system settings. The CRM does not pair with Bluetooth or send printer commands; Hostinger/VPS serves the page while the local browser communicates with the installed printer through the system print dialog.
+The print view uses browser-native HTML/CSS printing at 72mm width for the POS80 driver on an 80mm roll. Click **PRINT GATE PASS** to open the normal browser print dialog and select the locally installed POS80 printer. Select a 72mm-wide paper size, margins None, scale 100%, and disable headers and footers. Choose enough paper length to keep the entire pass on one page. First pair/install the printer in the school computer's Windows/macOS system settings. The CRM does not pair with Bluetooth or send printer commands; Hostinger/VPS serves the page while the local browser communicates with the installed printer through the system print dialog.
 
 ## Run locally
 
@@ -83,9 +83,33 @@ The digits above are an example; enter the freshly logged six-digit code in **6-
 
 Only the backend terminal receives the plaintext code. API responses never include it, and the database still stores a bcrypt hash. Notifications label these attempts **Development Only**; verification is recorded as `DEVELOPMENT_OTP`, not real parent contact. Other WhatsApp notification settings are unaffected.
 
-For real SMS OTP delivery, set `SMS_PROVIDER=twilio`, `OTP_DELIVERY_MODE=sms`, and provide the Twilio Account SID, Auth Token, and existing Verify Service SID in the project-root `.env`. Use `Shree Ram Public School` as the Verify Service Friendly Name. `(SAMPLE TEST)` is a Twilio Trial marker and is not removed by renaming the Service. Twilio Verify uses its Service/default or approved `HJ...` template, not arbitrary application text. Console mode fails startup outside `NODE_ENV=development`; console-issued codes and development-verified passes cannot be used to authorize production departures. Existing WhatsApp notifications remain separately configurable.
+For SMS OTP, use [APITxT](https://apitxt.com/dashboard). Add these settings to the project-root `.env` and restart the server:
 
-For both parent-verification choices, configure Twilio for SMS and SMTP for email in the same project-root `.env`: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM`. The gate-pass screen lets staff choose either SMS OTP (sent to the registered parent mobile) or Email OTP (sent to the student's registered email). Add the student's email when creating a record; CSV/Excel student imports must also include an `email` column. Existing student records should be updated with an email before using email verification. SMTP credentials are required only for email delivery; the settings response indicates which channels are configured without exposing credentials.
+```dotenv
+OTP_DELIVERY_MODE=sms
+APITXT_AUTH_KEY=your-api-key
+APITXT_TEMPLATE_ID=
+```
+
+`APITXT_TEMPLATE_ID` is optional: use the internal SMS template ID from APITxT, or leave it blank for its default SMS OTP configuration. Ensure your account has credits and an enabled SMS OTP template/configuration. The backend sends a form-encoded POST to `https://apitxt.com/api/sendOTP` with `authkey`, registered `mobile` (91 prefix), generated `otp`, `channel=sms`, `country=91`, and the optional `template_id`. Keys and OTPs never appear in URLs or API responses. Success means the provider accepted the request; check its dashboard for delivery status.
+
+The application generates six-digit codes, stores only bcrypt hashes, applies a maximum five-minute expiry (or the shorter school setting), a 60-second resend cooldown and five verification attempts. Failed SMS requests invalidate the issued code. Codes issued by the previous provider must be replaced by a new OTP after upgrading.
+
+Email OTP remains available with the existing `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` settings. Staff can choose SMS OTP for the registered parent mobile or Email OTP for the student's registered email. Missing SMS credentials disable SMS without blocking email or server startup. Add an `email` column for CSV/Excel student imports.
+
+The old custom WhatsApp adapter has been removed. Optional Meta WhatsApp notifications are separate from SMS/email verification. Console OTP remains development-only.
+
+## One-day bus swaps
+
+Open **Bus swaps → New bus swap**. Select an active student, the usual bus, the replacement bus, and the applicable date (today by default, up to 30 days ahead). Both buses must exist in the Bus staff directory. Record the parent's name and reason. Approval requires two SMS OTP verifications in order: first the parent’s registered mobile from the student profile, then the selected active Principal account. Add the Principal’s registered Indian mobile under **Users & access → Edit access → Registered mobile**. The OTP uses APITxT (APITXT_AUTH_KEY), expires after five minutes, allows five incorrect attempts, and has a 60-second resend cooldown plus recipient/request rate limits. Direct approval without both verifications is rejected. Parent OTP also expires in five minutes, permits at most five incorrect attempts, has a 60-second resend cooldown, and is rate-limited per registered contact. Bus swaps have no parent-verification bypass.
+
+A swap applies only on its selected school-local date (Asia/Kolkata). It does not change the student's regular transport record or create an exit gate pass. Use the date and bus filters to see changes involving either bus; older requests remain in history as expired. Only one pending/approved swap is allowed per student/date. Cancellation or rejection retains history and allows a replacement request. Active swaps prevent deletion of their student or bus staff records and renumbering of their buses.
+
+Teachers and reception can request swaps and view/cancel their own requests. Administrators and principals can review all requests. Security guards can view swaps. These capabilities also have separate permissions under Users & access; staff with custom permission overrides may need them enabled. Complete the request form and click **Send OTP Parents**, then **Verify Parents OTP**. No separate manual confirmation record is required. If sending fails, reopen the saved request and retry. This records consent but keeps the swap pending. Then click **Send OTP Principal**, enter the Principal’s OTP and click **Verify OTP & approve swap**. A single Principal is selected automatically. Parent OTPs can only be sent to the registered student-profile mobile, never a manually supplied alternate number. Teachers/reception can verify only their own requests; approval staff can verify any request. Both OTPs are bound to the swap and registered contact details; parent contact or request changes require fresh parent verification. Resending a parent OTP clears prior parent consent and invalidates any existing Principal OTP. Cancellation/rejection invalidates both pending OTPs. OTPs are hashed and never returned or logged. There is no console or administrator bypass for Principal verification.
+
+Approval queues four separate professional HTML/plain-text emails: Principal, parent (the student profile’s registered email), original bus driver, and replacement bus driver. Both drivers receive instructions specific to their bus, without the private parent request or reason. SMTP, a valid Principal email, a valid student-profile email for the parent, and both driver emails are required before OTP issuance. Confirm that the student profile email is the intended parent/family inbox. Emails have no shared CC/BCC list.
+
+Email jobs are saved in the approval transaction and attempted immediately. The server retries failures every minute with a short backoff, up to five attempts; **Email delivery → Retry failed emails** retries only failed recipients. SENT means accepted by SMTP, not proof of inbox delivery. Durable jobs survive restarts; a recovered interrupted send may be delivered again. Cancelling an approved swap queues cancellation notices for the same four recipients, and queued approval emails no longer applicable are skipped. Delivery results appear in the request details and Notifications. Run **npm run migrate -w server** on production deployments to create the BusSwapParentOTP, BusSwapOTP and BusSwapEmail indexes.
 
 ## Bus staff and driver exit emails
 

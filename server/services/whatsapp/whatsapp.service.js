@@ -1,5 +1,4 @@
 import { Notification, SystemSetting } from "../../models/index.js";
-import * as custom from "./providers/customProvider.js";
 import * as meta from "./providers/metaProvider.js";
 export async function sendWhatsAppMessage({
   mobile,
@@ -12,7 +11,7 @@ export async function sendWhatsAppMessage({
 }) {
   const provider = process.env.WHATSAPP_PROVIDER || "none";
   const configured =
-    ["custom", "meta"].includes(provider) &&
+    provider === "meta" &&
     process.env.WHATSAPP_API_URL &&
     process.env.WHATSAPP_TOKEN &&
     process.env.WHATSAPP_SENDER;
@@ -25,7 +24,7 @@ export async function sendWhatsAppMessage({
   });
   if (!configured) return { status: "UNCONFIGURED" };
   try {
-    const result = await { custom, meta }[provider].send({
+    const result = await meta.send({
       mobile,
       message,
       template,
@@ -56,6 +55,7 @@ export async function notifyPass(pass, event, suffix = "") {
       timeZone: "Asia/Kolkata",
     }),
   };
+  if(pass.recurring?.enabled)suffix=`Reusable ${pass.recurring.period.toLowerCase()} pass: ${pass.passDate} to ${pass.recurring.endDate}, daily exit from ${pass.recurring.exitTime} IST. One exit per day.\n${suffix}`;
   const key = {
     GATE_PASS_REQUESTED: "requested",
     GATE_PASS_APPROVED: "approved",

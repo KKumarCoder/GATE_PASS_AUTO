@@ -21,6 +21,7 @@ const models=await import('../models/index.js');
 const {User,Session,Student,GatePass,OTPVerification,GateEvent,AuditLog,Notification,SystemSetting}=models;
 const {hash}=await import('../utils/core.js');
 const {qrToken,parentPassToken}=await import('../services/qr/qr.service.js');
+const {schoolDate}=await import('../../shared/recurring.mjs');
 let repl,admin,teacher,guard,other,student;
 const auth=u=>`Bearer ${jwt.sign({version:u.sessionVersion,sid:u.$locals.sid},process.env.JWT_ACCESS_SECRET,{subject:String(u._id),expiresIn:'15m',issuer:'srps',audience:'srps-staff'})}`;
 const api=(method,path,user=admin)=>request(app)[method](`/api${path}`).set('Authorization',auth(user)).set('X-Forwarded-For',`192.0.2.${testClient}`);
@@ -248,7 +249,7 @@ test('visitor and staff transitions reject replay and unauthorized approval',asy
  assert.equal((await api('post',`/visitors/${id}/check-in`,guard).send({gate:'Main Gate'})).status,200);
  assert.equal((await api('post',`/visitors/${id}/check-in`,guard).send({gate:'Main Gate'})).status,409);
  assert.equal((await api('post',`/visitors/${id}/check-out`,guard).send({gate:'Main Gate'})).status,200);
- const staff=await api('post','/staff-passes',teacher).send({staff:String(teacher._id),department:'Academics',reason:'School work',expectedReturn:new Date(Date.now()+60000).toISOString()});assert.equal(staff.status,201);const sid=staff.body.data._id;
+ const staff=await verifiedStaffApi('post','/staff-passes',teacher).send({staff:String(teacher._id),department:'Academics',reason:'School work',expectedReturn:new Date(Date.now()+60000).toISOString()});assert.equal(staff.status,201);const sid=staff.body.data._id;
  assert.equal((await api('post',`/staff-passes/${sid}/approve`,teacher).send({})).status,403);
  for(const action of ['approve','exit','return'])assert.equal((await api('post',`/staff-passes/${sid}/${action}`,action==='approve'?admin:guard).send({gate:'Main Gate'})).status,200);
 });
@@ -380,9 +381,9 @@ test('Principal creates and approves passes without user, settings or gate acces
  assert.equal((await api('put','/settings',principal).send({})).status,403);
  assert.equal((await api('post','/students',principal).send({})).status,403);
 });
-test('default guard has verification and movement only, restricted to assigned gate',async()=>{
+test('default guard has verification, movement and bus swap viewing, restricted to assigned gate',async()=>{
  const gateUser=await accessUser('SECURITY_GUARD');const p=await approved();
- const me=await api('get','/auth/me',gateUser);assert.deepEqual(me.body.data.permissions,['gate.verify','gate.move']);assert.equal(me.body.data.assignedGate,'Main Gate');
+ const me=await api('get','/auth/me',gateUser);assert.deepEqual(me.body.data.permissions,['bus-swaps.view','gate.verify','gate.move']);assert.equal(me.body.data.assignedGate,'Main Gate');
  assert.equal((await api('get',`/gatepasses/verify/${qrToken(p)}`,gateUser)).status,200);
  for(const path of ['/students','/users','/reports','/gatepasses','/staff-passes','/visitors'])assert.equal((await api('get',path,gateUser)).status,403,path);
  for(const path of ['/gatepasses',`/gatepasses/${p._id}/approve`])assert.equal((await api('post',path,gateUser).send({})).status,403);
@@ -414,7 +415,7 @@ test('Admin assigns role and granular permissions, revokes sessions and cannot e
  assert.equal((await api('patch',`/users/${target._id}`,approver).send({role:'ADMIN'})).status,403);
  const scanner=await accessUser('SECURITY_GUARD',{permissions:['gate.verify']}),scanPass=await approved();
  const scannerMe=await api('get','/auth/me',scanner);
- assert.deepEqual(scannerMe.body.data.permissions,['gate.verify','gate.move']);
+ assert.deepEqual(scannerMe.body.data.permissions,['bus-swaps.view','gate.verify','gate.move']);
  assert.equal((await api('post',`/gatepasses/${scanPass._id}/exit`,scanner).send({gate:'Main Gate'})).status,200);
 });
 test('admins directly set staff passwords, revoke sessions and invalidate recovery tokens',async()=>{
@@ -454,7 +455,7 @@ test('report filters intersect student and class, validate calendar dates, and s
  const visitor=await api('post','/visitors').send({name:'Filter Visitor',mobile:'+919876543219',purpose:'Report test',personToMeet:'Principal',expectedExit:new Date(Date.now()+600000).toISOString()});const vid=visitor.body.data.pass._id;
  await api('post',`/visitors/${vid}/check-in`,guard).send({gate:'Main Gate'});
  const vr=await api('get',`/reports?kind=visitors&pendingReturn=true&student=${student._id}&className=IX&emergency=true`);assert.equal(vr.status,200);assert.ok(vr.body.data.items.some(p=>p._id===vid));assert.ok(vr.body.data.items.every(p=>p.status==='CHECKED_IN'));
- const staff=await api('post','/staff-passes',teacher).send({staff:String(teacher._id),department:'Academics',reason:'Report test',expectedReturn:new Date(Date.now()+600000).toISOString()});const sid=staff.body.data._id;
+ const staff=await verifiedStaffApi('post','/staff-passes',other).send({staff:String(other._id),department:'Academics',reason:'Report test',expectedReturn:new Date(Date.now()+600000).toISOString()});const sid=staff.body.data._id;
  await api('post',`/staff-passes/${sid}/approve`).send({});await api('post',`/staff-passes/${sid}/exit`,guard).send({gate:'Main Gate'});
  const sr=await api('get','/reports?kind=staff&pendingReturn=true');assert.equal(sr.status,200);assert.ok(sr.body.data.items.some(p=>p._id===sid));assert.ok(sr.body.data.items.every(p=>p.status==='EXITED'));
 });
@@ -489,15 +490,14 @@ test('assigned gates cannot be removed and session refreshes do not exhaust logi
  for(let i=0;i<12;i++)assert.equal((await agent.post('/api/auth/refresh').set('X-Forwarded-For',ip).send({})).status,200);
  assert.equal((await agent.post('/api/auth/login').set('X-Forwarded-For',ip).send({identifier:account.email,password:'CorrectHorse123!'})).status,200);
 });
-test('WhatsApp adapters handle success and failure without storing message or OTP secrets',async t=>{
+test('Meta WhatsApp adapter handles success and failure without storing message or OTP secrets',async t=>{
  const {default:axios}=await import('axios');const {sendWhatsAppMessage}=await import('../services/whatsapp/whatsapp.service.js');
  const keys=['WHATSAPP_PROVIDER','WHATSAPP_API_URL','WHATSAPP_TOKEN','WHATSAPP_SENDER','WHATSAPP_TEMPLATE'],saved=Object.fromEntries(keys.map(k=>[k,process.env[k]]));t.after(()=>{for(const key of keys)if(saved[key]===undefined)delete process.env[key];else process.env[key]=saved[key];});
- Object.assign(process.env,{WHATSAPP_PROVIDER:'custom',WHATSAPP_API_URL:'https://provider.test/messages',WHATSAPP_TOKEN:'test-only-token',WHATSAPP_SENDER:'test-sender',WHATSAPP_TEMPLATE:'test-template'});
- let payload;const transport=t.mock.method(axios,'post',async(url,body)=>{payload=body;return {data:{success:true,messageId:'test-message'}};});
- const delivered=await sendWhatsAppMessage({mobile:'+919876543210',message:'Secret body',otp:'174205',event:'ADAPTER_TEST'});assert.equal(delivered.status,'SENT');assert.equal(payload.copy_code,'174205');assert.equal(payload.phone_number,'919876543210');
- transport.mock.mockImplementation(async()=>{throw new Error('provider secret detail');});assert.equal((await sendWhatsAppMessage({mobile:'+919876543210',message:'Secret body',event:'ADAPTER_TEST'})).status,'FAILED');
+ let payload;const transport=t.mock.method(axios,'post',async()=>({data:{}}));
+ Object.assign(process.env,{WHATSAPP_TOKEN:'test-only-token',WHATSAPP_SENDER:'test-sender',WHATSAPP_TEMPLATE:'test-template'});
  process.env.WHATSAPP_PROVIDER='meta';process.env.WHATSAPP_API_URL='https://graph.facebook.com/v99.0/test/messages';transport.mock.mockImplementation(async(url,body)=>{payload=body;return {data:{messages:[{id:'meta-test'}]}};});
  assert.equal((await sendWhatsAppMessage({mobile:'+919876543210',message:'Secret body',event:'ADAPTER_TEST'})).status,'SENT');assert.equal(payload.type,'template');
+ transport.mock.mockImplementation(async()=>{throw new Error('provider secret detail');});assert.equal((await sendWhatsAppMessage({mobile:'+919876543210',message:'Secret body',event:'ADAPTER_TEST'})).status,'FAILED');
  const records=JSON.stringify(await Notification.find({event:'ADAPTER_TEST'}));for(const secret of ['174205','Secret body','test-only-token','provider secret detail'])assert.ok(!records.includes(secret));
 });
 test('automatic expiry is idempotent and preserves students awaiting return',async()=>{
@@ -510,23 +510,26 @@ test('automatic expiry is idempotent and preserves students awaiting return',asy
  assert.equal((await api('post',`/gatepasses/${outside._id}/return`,guard).send({gate:'Main Gate'})).status,200);
 });
 test('SMS OTP uses registered mobile, logs delivery outcomes and rejects incorrect or replayed codes',async t=>{
- const {default:twilio}=await import('twilio');const {env}=await import('../config/env.js');
- const savedMode=env.otpDeliveryMode,keys=['TWILIO_ACCOUNT_SID','TWILIO_AUTH_TOKEN','TWILIO_VERIFY_SERVICE_SID','TWILIO_VERIFY_TEMPLATE_SID'],saved=Object.fromEntries(keys.map(key=>[key,process.env[key]]));
+ const {default:axios}=await import('axios');const {env}=await import('../config/env.js');
+ const savedMode=env.otpDeliveryMode,keys=['APITXT_AUTH_KEY','APITXT_TEMPLATE_ID'],saved=Object.fromEntries(keys.map(key=>[key,process.env[key]]));
  t.after(()=>{env.otpDeliveryMode=savedMode;for(const key of keys)if(saved[key]===undefined)delete process.env[key];else process.env[key]=saved[key];});
- env.otpDeliveryMode='sms';Object.assign(process.env,{TWILIO_ACCOUNT_SID:`AC${'1'.repeat(32)}`,TWILIO_AUTH_TOKEN:'test-only-token',TWILIO_VERIFY_SERVICE_SID:`VA${'2'.repeat(32)}`});delete process.env.TWILIO_VERIFY_TEMPLATE_SID;
- const calls=[];const transport=t.mock.method(twilio.RequestClient.prototype,'request',async options=>{calls.push(options);return {statusCode:200,headers:{},body:JSON.stringify({status:options.uri.endsWith('VerificationCheck')?(options.data.Code==='174205'?'approved':'pending'):'pending'})};});
+ env.otpDeliveryMode='sms';process.env.APITXT_AUTH_KEY='test-only-token';delete process.env.APITXT_TEMPLATE_ID;
+ const calls=[];const transport=t.mock.method(axios,'post',async(url,body,options)=>{calls.push({url,body:new URLSearchParams(body),options});return {data:{status:'success'}};});
  const smsStudent=await Student.create({name:'SMS Test Student',admissionNumber:'SMS-001',className:'IX',section:'A',primaryMobile:'+919876540077'});
  const p=await create(admin,{...input(),student:String(smsStudent._id)});
- const sent=await api('post',`/gatepasses/${p._id}/send-otp`).send({channel:'sms'});assert.equal(sent.status,200,JSON.stringify(sent.body));assert.equal(sent.body.data.deliveryMethod,'sms');assert.equal(calls[0].data.To,smsStudent.primaryMobile);
- const record=await OTPVerification.findOne({gatePass:p._id}).select('+hashedOTP');assert.equal(record.deliveryMethod,'TWILIO_SMS');assert.equal(record.hashedOTP,null);
+ const sent=await api('post',`/gatepasses/${p._id}/send-otp`).send({channel:'sms'});assert.equal(sent.status,200,JSON.stringify(sent.body));assert.equal(sent.body.data.deliveryMethod,'sms');assert.equal(calls[0].body.get('mobile'),smsStudent.primaryMobile.slice(1));
+ const code=calls[0].body.get('otp');assert.match(code,/^\d{6}$/);assert.equal(JSON.stringify(sent.body).includes(code),false);
+ const record=await OTPVerification.findOne({gatePass:p._id}).select('+hashedOTP');assert.equal(record.deliveryMethod,'APITXT_SMS');assert.ok(await bcrypt.compare(code,record.hashedOTP));
+ assert.equal((await api('post',`/gatepasses/${p._id}/send-otp`).send({channel:'sms'})).status,429);
  assert.equal((await api('post',`/gatepasses/${p._id}/verify-otp`).send({otp:'000000'})).status,400);
- assert.equal((await api('post',`/gatepasses/${p._id}/verify-otp`).send({otp:'174205'})).status,200);
- assert.equal((await api('post',`/gatepasses/${p._id}/verify-otp`).send({otp:'174205'})).status,400);
- assert.ok(await Notification.exists({gatePass:p._id,provider:'twilio-sms',status:'SENT'}));
+ assert.equal((await api('post',`/gatepasses/${p._id}/verify-otp`).send({otp:code})).status,200);
+ assert.equal((await api('post',`/gatepasses/${p._id}/verify-otp`).send({otp:code})).status,400);
+ assert.ok(await Notification.exists({gatePass:p._id,provider:'apitxt-sms',status:'SENT'}));
  const failedStudent=await Student.create({name:'SMS Failure Student',admissionNumber:'SMS-002',className:'IX',section:'A',primaryMobile:'+919876540078'});const failed=await create(admin,{...input(),student:String(failedStudent._id)});
  transport.mock.mockImplementation(async()=>{throw new Error('provider secret');});assert.equal((await api('post',`/gatepasses/${failed._id}/send-otp`).send({})).status,502);
- assert.ok(await Notification.exists({gatePass:failed._id,provider:'twilio-sms',status:'FAILED'}));
- const records=JSON.stringify(await Notification.find({provider:'twilio-sms'}));assert.ok(!records.includes('174205')&&!records.includes('provider secret')&&!records.includes('test-only-token'));
+ const failedRecord=await OTPVerification.findOne({gatePass:failed._id});assert.equal(failedRecord.verified,true);
+ assert.ok(await Notification.exists({gatePass:failed._id,provider:'apitxt-sms',status:'FAILED'}));
+ const records=JSON.stringify(await Notification.find({provider:'apitxt-sms'}));assert.ok(!records.includes(code)&&!records.includes('provider secret')&&!records.includes('test-only-token'));
 });
 test('email OTP uses the registered student email, stores only a hash, and invalidates failed deliveries',async t=>{
  const {default:nodemailer}=await import('nodemailer');const {env}=await import('../config/env.js');
@@ -600,3 +603,451 @@ test('admins manage bus staff and drivers are emailed only after exit, with retr
  assert.equal((await api('delete',`/bus-staff/${created.body.data._id}`)).status,200);
  assert.equal((await api('get','/bus-drivers')).body.data.items.length,0);
 });
+
+test('manual verification exception requires a reason and administrator approval',async()=>{
+ const localStudent=await Student.create({name:'Manual Verification Student',admissionNumber:'MANUAL-001',className:'VIII',section:'A',primaryMobile:'+919876540088'});
+ const body={...input(),student:String(localStudent._id),skipParentVerification:true};
+ for(const verificationSkipReason of [undefined,'','   ','a'.repeat(501)]){
+  assert.equal((await api('post','/gatepasses',teacher).send({...body,verificationSkipReason})).status,400);
+ }
+ assert.equal((await api('post','/gatepasses',guard).send({...body,verificationSkipReason:'Parent cannot use OTP'})).status,403);
+ const result=await api('post','/gatepasses',teacher).send({...body,verificationSkipReason:'  Parent cannot access email or OTP  '});
+ assert.equal(result.status,201,JSON.stringify(result.body));
+ const p=result.body.data;
+ assert.equal(p.status,'ADMIN_APPROVAL_PENDING');
+ assert.equal(p.parentVerification.verified,false);
+ assert.equal(p.parentVerification.method,'MANUAL_OVERRIDE');
+ assert.equal(p.parentVerification.skipReason,'Parent cannot access email or OTP');
+ assert.equal(p.parentVerification.skippedBy,String(teacher._id));
+ assert.ok(p.parentVerification.skippedAt);
+ assert.ok(await AuditLog.exists({action:'PARENT_VERIFICATION_SKIPPED',entityId:p._id}));
+ assert.equal((await api('post',`/gatepasses/${p._id}/approve`,teacher).send({})).status,403);
+ assert.equal((await api('post',`/gatepasses/${p._id}/exit`,guard).send({gate:'Main Gate'})).status,409);
+ const approvedPass=await api('post',`/gatepasses/${p._id}/approve`).send({});
+ assert.equal(approvedPass.status,200,JSON.stringify(approvedPass.body));
+ assert.equal(approvedPass.body.data.pass.status,'READY_FOR_EXIT');
+ assert.ok(approvedPass.body.data.pass.qr.generatedAt);
+ await GatePass.updateOne({_id:p._id},{'timing.requestedExit':new Date(Date.now()-60000)});
+ assert.equal((await api('post',`/gatepasses/${p._id}/exit`,guard).send({gate:'Main Gate'})).status,200);
+});
+
+test('reusable QR records daily exits, reserves validity dates and requires approval',async()=>{
+ const {schoolDate}=await import('../../shared/recurring.mjs');
+ const s=await Student.create({name:'Recurring Student',admissionNumber:'RECURRING-001',className:'VIII',section:'A',primaryMobile:'+919876540077'});
+ const body={...input(),student:String(s._id),requestedExit:new Date(Date.now()-60000).toISOString(),expectedReturn:null,recurrence:'WEEKLY',validUntil:schoolDate(new Date(Date.now()+6*86400000)),skipParentVerification:true,verificationSkipReason:'Parent present, cannot use OTP'};
+ const created=await api('post','/gatepasses',teacher).send(body);
+ assert.equal(created.status,201,JSON.stringify(created.body));
+ const p=created.body.data;
+ assert.equal(p.status,'ADMIN_APPROVAL_PENDING');
+ assert.equal(p.recurring.enabled,true);
+ assert.equal(p.expiresAt,new Date(`${body.validUntil}T23:59:59.999+05:30`).toISOString());
+ const overlap=await api('post','/gatepasses',teacher).send({...input(),student:String(s._id),requestedExit:new Date(Date.now()+86400000).toISOString(),expectedReturn:null});
+ assert.equal(overlap.status,409);
+ assert.equal((await api('post',`/gatepasses/${p._id}/approve`).send({})).status,200);
+ const approved=await GatePass.findById(p._id),token=qrToken(approved);
+ const shared=await request(app).get(`/api/parent/pass/${parentPassToken(approved)}`);assert.equal(shared.status,200);assert.equal(shared.body.data.recurring.endDate,body.validUntil);assert.equal(shared.body.data.recurring.exits,undefined);
+ const scans=await Promise.all([api('post','/gatepasses/scan',guard).send({token,gate:'Main Gate'}),api('post','/gatepasses/scan',guard).send({token,gate:'Main Gate'})]);
+ assert.deepEqual(scans.map(r=>r.status).sort(),[200,409]);
+ assert.equal((await api('post',`/gatepasses/${p._id}/exit`,guard).send({gate:'Main Gate'})).status,409);
+ let saved=await GatePass.findById(p._id);
+ assert.equal(saved.status,'READY_FOR_EXIT');assert.equal(saved.recurring.exits.length,1);assert.equal(qrToken(saved),token);
+ // Simulate a previous day's exit while retaining today's validity and original QR.
+ await GatePass.updateOne({_id:p._id},{'recurring.lastExitDate':schoolDate(new Date(Date.now()-86400000))});
+ assert.equal((await api('post',`/gatepasses/${p._id}/exit`,guard).send({gate:'Main Gate'})).status,200);
+ saved=await GatePass.findById(p._id);assert.equal(saved.recurring.exits.length,2);assert.equal(qrToken(saved),token);
+ await GatePass.updateOne({_id:p._id},{expiresAt:new Date(Date.now()-1000)});
+ assert.equal((await api('post','/gatepasses/scan',guard).send({token,gate:'Main Gate'})).status,409);
+});
+
+test('monthly passes validate calendar and period limits, and cancellation revokes reusable QR',async()=>{
+ const {schoolDate}=await import('../../shared/recurring.mjs');
+ const s=await Student.create({name:'Monthly Student',admissionNumber:'RECURRING-002',className:'VIII',section:'A',primaryMobile:'+919876540066'});
+ const body={...input(),student:String(s._id),expectedReturn:null,recurrence:'MONTHLY',skipParentVerification:true,verificationSkipReason:'Parent cannot access OTP'};
+ for(const validUntil of ['2026-02-30',schoolDate(new Date(Date.now()-86400000)),schoolDate(new Date(Date.now()+31*86400000))]){
+  assert.equal((await api('post','/gatepasses',teacher).send({...body,validUntil})).status,400);
+ }
+ const validUntil=schoolDate(new Date(Date.now()+30*86400000));
+ assert.equal((await api('post','/gatepasses',teacher).send({...body,recurrence:'WEEKLY',validUntil})).status,400);
+ const response=await api('post','/gatepasses',teacher).send({...body,validUntil});assert.equal(response.status,201,JSON.stringify(response.body));
+ const id=response.body.data._id;
+ assert.equal((await api('post',`/gatepasses/${id}/approve`).send({})).status,200);
+ const p=await GatePass.findById(id);
+ assert.equal((await api('post',`/gatepasses/${id}/cancel`).send({reason:'Recurring arrangement ended'})).status,200);
+ const scan=await api('post','/gatepasses/scan',guard).send({token:qrToken(p),gate:'Main Gate'});
+ assert.equal(scan.status,409);assert.equal(scan.body.reason,'EXIT_DENIED_CANCELLED');
+});
+
+test('one-day bus swaps work without a manual confirmation record and require OTP approval',async t=>{
+ const delivery=await mockBusSwapDelivery(t);
+ const {BusSwap,BusDriver}=models;
+ const {schoolDate}=await import('../../shared/recurring.mjs');
+ const today=schoolDate();
+ const s=await Student.create({name:'Bus Swap Student',admissionNumber:'SWAP-001',className:'VIII',section:'A',primaryMobile:'+919876540055',busRoute:'Regular route 14',email:'swap-parent@school.test'});
+ const drivers=await BusDriver.create([{busNumber:'SWAP-14',driverName:'Original Driver',email:'driver14@school.test'},{busNumber:'SWAP-9',driverName:'Replacement Driver',email:'driver9@school.test'}]);
+ const body={student:String(s._id),date:today,fromBus:'SWAP-14',toBus:'SWAP-9',reason:'Parent requests different drop-off today',parentName:'Parent Kumar'};
+ assert.equal((await api('post','/bus-swaps',guard).send(body)).status,403);
+ for(const override of [{reason:''},{toBus:'SWAP-14'},{toBus:'MISSING'},{date:'2026-02-30'},{date:'2020-01-01'},{date:schoolDate(new Date(Date.now()+31*86400000))}]){
+  assert.equal((await api('post','/bus-swaps',teacher).send({...body,...override})).status,400);
+ }
+ const created=await api('post','/bus-swaps',teacher).send(body);assert.equal(created.status,201,JSON.stringify(created.body));
+ const id=created.body.data._id;assert.equal(created.body.data.status,'PENDING');assert.equal(created.body.data.activeToday,false);
+ assert.equal((await api('post','/bus-swaps',teacher).send(body)).status,409);
+ assert.equal((await api('post',`/bus-swaps/${id}/approve`,teacher).send({})).status,403);
+ assert.equal((await api('post',`/bus-swaps/${id}/cancel`,other).send({reason:'Not my request'})).status,404);
+ assert.equal((await api('get',`/bus-swaps?date=${today}`,other)).body.data.items.some(i=>i._id===id),false);
+ await verifyBusSwapParent(`/bus-swaps/${id}`,delivery);
+ assert.equal((await api('post',`/bus-swaps/${id}/send-principal-otp`).send({principalId:String(delivery.principal._id)})).status,200);
+ const approved=await api('post',`/bus-swaps/${id}/approve`).send({otp:delivery.codes.at(-1)});assert.equal(approved.status,200,JSON.stringify(approved.body));assert.equal(approved.body.data.activeToday,true);
+ assert.equal((await api('post',`/bus-swaps/${id}/approve`).send({otp:delivery.codes.at(-1)})).status,409);
+ const list=await api('get',`/bus-swaps?date=${today}&bus=SWAP-9`,guard);assert.equal(list.status,200);assert.equal(list.body.data.items.find(i=>i._id===id).fromBus,'SWAP-14');
+ assert.equal((await Student.findById(s._id)).busRoute,'Regular route 14');
+ assert.equal(await GatePass.countDocuments({student:s._id}),0);
+ assert.equal((await api('delete',`/bus-staff/${drivers[0]._id}`)).status,409);
+ assert.equal((await api('delete',`/students/${s._id}`)).status,409);
+ const nextDay=schoolDate(new Date(Date.now()+86400000));
+ assert.equal((await api('get',`/bus-swaps?date=${nextDay}&bus=SWAP-9`,guard)).body.data.items.some(i=>i._id===id),false);
+ assert.equal((await api('post',`/bus-swaps/${id}/cancel`,teacher).send({reason:'Parent reverted the request'})).status,200);
+ const replacement=await api('post','/bus-swaps',teacher).send(body);assert.equal(replacement.status,201);
+ assert.equal((await api('post',`/bus-swaps/${replacement.body.data._id}/reject`).send({reason:'Destination bus is full'})).status,200);
+ assert.equal((await api('post',`/bus-swaps/${replacement.body.data._id}/approve`).send({otp:'123456'})).status,409);
+ assert.ok(await AuditLog.exists({entityId:id,action:'BUS_SWAP_APPROVED'}));
+ // Past approved records remain in history, but cannot be applied or changed.
+ const past=await BusSwap.create({...body,student:s._id,swapNumber:'TEST-PAST-SWAP',date:'2020-01-01',status:'APPROVED',requestedBy:teacher._id});
+ const history=await api('get','/bus-swaps?date=2020-01-01',guard);const row=history.body.data.items.find(i=>i._id===String(past._id));assert.equal(row.effectiveStatus,'EXPIRED');assert.equal(row.activeToday,false);
+ assert.equal((await api('post',`/bus-swaps/${past._id}/cancel`).send({reason:'Too late'})).status,409);
+ assert.equal((await api('get','/bus-swaps?date=invalid')).status,400);
+});
+
+test('concurrent bus swap requests allow only one pending request per student and date',async()=>{
+ const {schoolDate}=await import('../../shared/recurring.mjs');
+ const s=await Student.create({name:'Concurrent Swap Student',admissionNumber:'SWAP-RACE',className:'VIII',section:'A',primaryMobile:'+919876540044'});
+ const body={student:String(s._id),date:schoolDate(),fromBus:'SWAP-14',toBus:'SWAP-9',reason:'One day only',parentName:'Parent',parentRequest:'Confirmed in person'};
+ const results=await Promise.all([api('post','/bus-swaps',teacher).send(body),api('post','/bus-swaps',teacher).send(body)]);
+ assert.deepEqual(results.map(r=>r.status).sort(),[201,409]);
+});
+
+async function mockBusSwapDelivery(t){
+ const {default:nodemailer}=await import('nodemailer');const {default:axios}=await import('axios');const {env}=await import('../config/env.js');
+ const keys=['smtpHost','smtpPort','smtpUser','smtpPass','smtpFrom'],saved=Object.fromEntries(keys.map(k=>[k,env[k]])),savedSMS=process.env.APITXT_AUTH_KEY;
+ t.after(()=>{Object.assign(env,saved);if(savedSMS===undefined)delete process.env.APITXT_AUTH_KEY;else process.env.APITXT_AUTH_KEY=savedSMS;});
+ Object.assign(env,{smtpHost:'smtp.test',smtpPort:587,smtpUser:'user',smtpPass:'test-secret',smtpFrom:'SRPS <office@school.test>'});process.env.APITXT_AUTH_KEY='test-sms-secret';
+ const state={codes:[],sms:[],emails:[],failSMS:false,failEmail:''};
+ t.mock.method(axios,'post',async(url,body)=>{if(state.failSMS)throw new Error('sms-provider-secret');const values=new URLSearchParams(body);state.sms.push(values.get('mobile'));state.codes.push(values.get('otp'));return {data:{status:'success'}};});
+ t.mock.method(nodemailer,'createTransport',()=>({sendMail:async msg=>{if(msg.to===state.failEmail)throw new Error('smtp-provider-secret');state.emails.push(msg);return {accepted:[msg.to],rejected:[]};}}));
+ state.principal=await accessUser('PRINCIPAL',{mobile:`+919${crypto.randomInt(100000000,999999999)}`});
+ return state;
+}
+async function pendingSwapFixture(){
+ const key=crypto.randomBytes(4).toString('hex'),{schoolDate}=await import('../../shared/recurring.mjs');
+ const student=await Student.create({name:'Student <Test>',admissionNumber:`SWAP-${key}`,className:'VIII',section:'A',primaryMobile:`+919${crypto.randomInt(100000000,999999999)}`,email:`parent-${key}@school.test`});
+ const drivers=await models.BusDriver.create([{busNumber:`F-${key}`,driverName:'Original Driver',email:`from-${key}@school.test`},{busNumber:`T-${key}`,driverName:'Replacement Driver',email:`to-${key}@school.test`}]);
+ const swap=await models.BusSwap.create({swapNumber:`SWAP-${key}`,student:student._id,studentName:student.name,admissionNumber:student.admissionNumber,className:'VIII-A',date:schoolDate(),fromBus:drivers[0].busNumber,toBus:drivers[1].busNumber,fromDriver:drivers[0].driverName,toDriver:drivers[1].driverName,reason:'Private family arrangement',parentName:'Parent',parentRequest:'Confirmed by phone',requestedBy:teacher._id,status:'PENDING'});
+ return {swap,student,drivers};
+}
+test('Principal SMS OTP gates approval and sends four separate professional confirmation emails',async t=>{
+ const delivery=await mockBusSwapDelivery(t),{swap,student,drivers}=await pendingSwapFixture();
+ const root=`/bus-swaps/${swap._id}`;
+ assert.equal((await api('post',`${root}/approve`).send({})).status,400);
+ assert.equal((await api('post',`${root}/approve`).send({otp:'123456'})).status,400);
+ assert.equal((await api('post',`${root}/send-principal-otp`,teacher).send({principalId:String(delivery.principal._id)})).status,403);
+ assert.equal((await api('post',`${root}/send-principal-otp`).send({principalId:String(admin._id)})).status,409);
+ assert.equal((await api('post',`${root}/send-principal-otp`).send({principalId:String(delivery.principal._id)})).status,409);
+ await verifyBusSwapParent(root,delivery);
+ const sent=await api('post',`${root}/send-principal-otp`).send({principalId:String(delivery.principal._id)});assert.equal(sent.status,200,JSON.stringify(sent.body));
+ const code=delivery.codes.at(-1);assert.equal(delivery.sms.at(-1),delivery.principal.mobile.slice(1));assert.equal(JSON.stringify(sent.body).includes(code),false);
+ const stored=await models.BusSwapOTP.findOne({busSwap:swap._id}).select('+hashedOTP');assert.ok(await bcrypt.compare(code,stored.hashedOTP));assert.equal((await models.BusSwap.findById(swap._id)).status,'PENDING');
+ assert.equal((await api('post',`${root}/send-principal-otp`).send({principalId:String(delivery.principal._id)})).status,429);
+ assert.equal((await api('post',`${root}/approve`).send({otp:'000000'})).status,400);
+ assert.equal((await models.BusSwapOTP.findOne({busSwap:swap._id})).attempts,1);
+ const results=await Promise.all([api('post',`${root}/approve`).send({otp:code}),api('post',`${root}/approve`).send({otp:code})]);assert.deepEqual(results.map(r=>r.status).sort(),[200,409]);
+ assert.equal(delivery.emails.length,4);assert.deepEqual(delivery.emails.map(e=>e.to).sort(),[delivery.principal.email,student.email,...drivers.map(d=>d.email)].sort());
+ assert.ok(delivery.emails.every(e=>e.html.includes('&lt;Test&gt;')&&!e.html.includes('Student <Test>')&&!e.cc&&!e.bcc));
+ assert.match(delivery.emails.find(e=>e.to===drivers[0].email).text,/do not board/);
+ assert.match(delivery.emails.find(e=>e.to===drivers[1].email).text,/please receive/);
+ assert.ok(!delivery.emails.find(e=>e.to===drivers[0].email).text.includes('Private family arrangement'));
+ const approved=await models.BusSwap.findById(swap._id);assert.equal(String(approved.principalApproval.principal),String(delivery.principal._id));assert.ok(approved.principalApproval.verifiedAt);
+ const status=await api('get',`${root}/emails`);assert.equal(status.body.data.items.filter(i=>i.status==='SENT').length,4);
+ assert.equal((await api('post',`${root}/retry-emails`).send({})).status,200);assert.equal(delivery.emails.length,4);
+ const logs=JSON.stringify(await Notification.find({busSwap:swap._id}));for(const secret of [code,'sms-provider-secret','smtp-provider-secret','test-sms-secret'])assert.ok(!logs.includes(secret));
+ assert.equal((await api('post',`${root}/cancel`,teacher).send({reason:'Parent cancelled'})).status,200);assert.equal(delivery.emails.length,8);assert.ok(delivery.emails.slice(4).every(e=>e.subject.includes('cancellation')));
+});
+test('Principal OTP expires, locks out incorrect attempts, and is invalid after contact changes or failed SMS',async t=>{
+ const delivery=await mockBusSwapDelivery(t),{swap}=await pendingSwapFixture(),root=`/bus-swaps/${swap._id}`;
+ const send=()=>api('post',`${root}/send-principal-otp`).send({principalId:String(delivery.principal._id)});
+ await verifyBusSwapParent(root,delivery);
+ assert.equal((await send()).status,200);const first=delivery.codes.at(-1);
+ await models.BusSwapOTP.updateOne({busSwap:swap._id},{expiresAt:new Date(Date.now()-1000)});
+ assert.equal((await api('post',`${root}/approve`).send({otp:first})).status,400);
+ await models.BusSwapOTP.updateOne({busSwap:swap._id},{sentAt:new Date(Date.now()-61000)});
+ assert.equal((await send()).status,200);
+ for(let i=0;i<5;i++)assert.equal((await api('post',`${root}/approve`).send({otp:'000000'})).status,i===4?429:400);
+ assert.equal((await api('post',`${root}/approve`).send({otp:delivery.codes.at(-1)})).status,429);
+ await models.BusSwapOTP.updateOne({busSwap:swap._id},{sentAt:new Date(Date.now()-61000)});assert.equal((await send()).status,200);
+ const current=delivery.codes.at(-1);await User.updateOne({_id:delivery.principal._id},{mobile:'+919123450001'});
+ assert.equal((await api('post',`${root}/approve`).send({otp:current})).status,409);
+ await User.updateOne({_id:delivery.principal._id},{mobile:delivery.principal.mobile});
+ await models.BusSwapOTP.updateOne({busSwap:swap._id},{sentAt:new Date(Date.now()-61000)});delivery.failSMS=true;
+ assert.equal((await send()).status,502);
+ assert.equal((await api('post',`${root}/approve`).send({otp:current})).status,400);
+ assert.equal((await models.BusSwap.findById(swap._id)).status,'PENDING');assert.equal(delivery.emails.length,0);
+});
+test('bus swap email failures stay visible and retries do not resend successful recipients',async t=>{
+ const delivery=await mockBusSwapDelivery(t),{swap,student,drivers}=await pendingSwapFixture(),root=`/bus-swaps/${swap._id}`;
+ await verifyBusSwapParent(root,delivery);
+ await Student.updateOne({_id:student._id},{$unset:{email:1}});
+ assert.equal((await api('post',`${root}/send-principal-otp`).send({principalId:String(delivery.principal._id)})).status,409);
+ await Student.updateOne({_id:student._id},{email:student.email});
+ assert.equal((await api('post',`${root}/send-principal-otp`).send({principalId:String(delivery.principal._id)})).status,200);
+ const code=delivery.codes.at(-1);
+ await models.BusDriver.updateOne({_id:drivers[0]._id},{email:'changed@school.test'});
+ assert.equal((await api('post',`${root}/approve`).send({otp:code})).status,409);
+ await models.BusDriver.updateOne({_id:drivers[0]._id},{email:drivers[0].email});delivery.failEmail=drivers[1].email;
+ assert.equal((await api('post',`${root}/approve`).send({otp:code})).status,200);assert.equal(delivery.emails.length,3);
+ assert.equal(await models.BusSwapEmail.countDocuments({busSwap:swap._id,status:'FAILED'}),1);
+ assert.equal((await api('post',`${root}/retry-emails`,teacher).send({})).status,403);
+ delivery.failEmail='';assert.equal((await api('post',`${root}/retry-emails`).send({})).status,200);assert.equal(delivery.emails.length,4);
+ assert.equal(await models.BusSwapEmail.countDocuments({busSwap:swap._id,status:'SENT'}),4);
+});
+
+async function verifyBusSwapParent(root,delivery){
+ const sent=await api('post',`${root}/send-parent-otp`,teacher).send({});assert.equal(sent.status,200,JSON.stringify(sent.body));
+ const verified=await api('post',`${root}/verify-parent-otp`,teacher).send({otp:delivery.codes.at(-1)});assert.equal(verified.status,200,JSON.stringify(verified.body));
+ assert.equal(verified.body.data.status,'PENDING');assert.ok(verified.body.data.parentApproval.verifiedAt);
+ return delivery.codes.at(-1);
+}
+test('parent bus swap OTP uses registered mobile, restricts ownership and cannot alone approve a swap',async t=>{
+ const delivery=await mockBusSwapDelivery(t),{swap,student}=await pendingSwapFixture(),root=`/bus-swaps/${swap._id}`;
+ assert.equal((await api('post',`${root}/send-parent-otp`,guard).send({})).status,403);
+ assert.equal((await api('post',`${root}/send-parent-otp`,other).send({})).status,404);
+ assert.equal((await api('post',`${root}/send-parent-otp`,teacher).send({mobile:'+919999999999'})).status,400);
+ const sent=await api('post',`${root}/send-parent-otp`,teacher).send({});assert.equal(sent.status,200);
+ const code=delivery.codes.at(-1);assert.equal(delivery.sms.at(-1),student.primaryMobile.slice(1));assert.ok(!JSON.stringify(sent.body).includes(code));
+ const stored=await models.BusSwapParentOTP.findOne({busSwap:swap._id}).select('+hashedOTP');assert.ok(await bcrypt.compare(code,stored.hashedOTP));
+ assert.equal((await api('post',`${root}/send-parent-otp`,teacher).send({})).status,429);
+ assert.equal((await api('post',`${root}/verify-parent-otp`,other).send({otp:code})).status,404);
+ assert.equal((await api('post',`${root}/verify-parent-otp`,teacher).send({otp:'000000'})).status,400);
+ assert.equal((await models.BusSwapParentOTP.findOne({busSwap:swap._id})).attempts,1);
+ const results=await Promise.all([api('post',`${root}/verify-parent-otp`,teacher).send({otp:code}),api('post',`${root}/verify-parent-otp`,teacher).send({otp:code})]);assert.deepEqual(results.map(r=>r.status).sort(),[200,400]);
+ const record=await models.BusSwap.findById(swap._id);assert.equal(record.status,'PENDING');assert.ok(record.parentApproval.verifiedAt);assert.equal(delivery.emails.length,0);
+ assert.equal((await api('post',`${root}/approve`).send({otp:code})).status,400);
+ const output=JSON.stringify(results.find(r=>r.status===200).body);assert.ok(!output.includes(code)&&!output.includes(student.primaryMobile)&&!output.includes('contextHash'));
+ assert.ok(await AuditLog.exists({entityId:swap._id,action:'BUS_SWAP_PARENT_VERIFIED'}));
+ const logs=JSON.stringify(await Notification.find({busSwap:swap._id}));assert.ok(!logs.includes(code));
+});
+test('parent OTP expiry and five incorrect attempts block verification; failed SMS cannot be used',async t=>{
+ const delivery=await mockBusSwapDelivery(t),{swap}=await pendingSwapFixture(),root=`/bus-swaps/${swap._id}`;
+ const send=()=>api('post',`${root}/send-parent-otp`,teacher).send({});
+ assert.equal((await send()).status,200);const expiredCode=delivery.codes.at(-1);
+ await models.BusSwapParentOTP.updateOne({busSwap:swap._id},{expiresAt:new Date(0)});
+ assert.equal((await api('post',`${root}/verify-parent-otp`,teacher).send({otp:expiredCode})).status,400);
+ await models.BusSwapParentOTP.updateOne({busSwap:swap._id},{sentAt:new Date(Date.now()-61000)});assert.equal((await send()).status,200);
+ for(let i=0;i<5;i++)assert.equal((await api('post',`${root}/verify-parent-otp`,teacher).send({otp:'000000'})).status,i===4?429:400);
+ assert.equal((await api('post',`${root}/verify-parent-otp`,teacher).send({otp:delivery.codes.at(-1)})).status,429);
+ await models.BusSwapParentOTP.updateOne({busSwap:swap._id},{sentAt:new Date(Date.now()-61000)});delivery.failSMS=true;
+ assert.equal((await send()).status,502);
+ assert.equal((await api('post',`${root}/verify-parent-otp`,teacher).send({otp:delivery.codes.at(-1)})).status,400);
+ assert.equal((await models.BusSwap.findById(swap._id)).parentApproval?.verifiedAt,undefined);
+ assert.equal(delivery.emails.length,0);
+});
+test('parent contact changes and renewed verification invalidate Principal approval codes',async t=>{
+ const delivery=await mockBusSwapDelivery(t),{swap,student}=await pendingSwapFixture(),root=`/bus-swaps/${swap._id}`;
+ await verifyBusSwapParent(root,delivery);
+ const sendPrincipal=()=>api('post',`${root}/send-principal-otp`).send({principalId:String(delivery.principal._id)});
+ assert.equal((await sendPrincipal()).status,200);const oldPrincipal=delivery.codes.at(-1);
+ await Student.updateOne({_id:student._id},{primaryMobile:'+919123450008'});
+ assert.equal((await api('post',`${root}/approve`).send({otp:oldPrincipal})).status,409);
+ await Student.updateOne({_id:student._id},{primaryMobile:student.primaryMobile});
+ await models.BusSwapParentOTP.updateOne({busSwap:swap._id},{sentAt:new Date(Date.now()-61000)});
+ assert.equal((await api('post',`${root}/send-parent-otp`,teacher).send({})).status,200);
+ const newParent=delivery.codes.at(-1);
+ assert.equal((await api('post',`${root}/approve`).send({otp:oldPrincipal})).status,400);
+ assert.equal((await sendPrincipal()).status,409);
+ assert.equal((await api('post',`${root}/verify-parent-otp`,teacher).send({otp:newParent})).status,200);
+ await models.BusSwapOTP.updateOne({busSwap:swap._id},{sentAt:new Date(Date.now()-61000)});
+ assert.equal((await sendPrincipal()).status,200);
+ assert.equal((await api('post',`${root}/approve`).send({otp:delivery.codes.at(-1)})).status,200);
+ assert.equal(delivery.emails.length,4);assert.ok(delivery.emails[0].text.includes('Parent SMS OTP verified'));
+});
+test('cancellation invalidates pending parent verification and parent SMS rate limit spans swaps',async t=>{
+ const delivery=await mockBusSwapDelivery(t),{swap}=await pendingSwapFixture(),root=`/bus-swaps/${swap._id}`;
+ assert.equal((await api('post',`${root}/send-parent-otp`,teacher).send({})).status,200);const code=delivery.codes.at(-1);
+ assert.equal((await api('post',`${root}/cancel`,teacher).send({reason:'Parent cancelled request'})).status,200);
+ assert.equal((await api('post',`${root}/verify-parent-otp`,teacher).send({otp:code})).status,409);
+ assert.ok((await models.BusSwapParentOTP.findOne({busSwap:swap._id})).consumedAt);
+ const fixture=await pendingSwapFixture();const window=Math.floor(Date.now()/900000);
+ await models.RateBucket.create({key:`bus-swap-parent-otp:${hash(fixture.student.primaryMobile)}:${window}`,count:5,expiresAt:new Date(Date.now()+1800000)});
+ assert.equal((await api('post',`/bus-swaps/${fixture.swap._id}/send-parent-otp`,teacher).send({})).status,429);
+});
+
+test('staff directory members support movement without login accounts',async()=>{
+ const member=await models.StaffMember.create({employeeId:'DIR-001',name:'Directory Teacher',staffRole:'teacher',designation:'Science'});
+ assert.equal((await api('get','/staff-directory',teacher)).status,403);
+ const directory=await api('get','/staff-directory');assert.equal(directory.status,200);assert.ok(directory.body.data.items.some(s=>s.employeeId==='DIR-001'));
+ const body={staff:String(member._id),department:'Science',reason:'School errand',expectedReturn:new Date(Date.now()+3600000).toISOString()};
+ assert.equal((await verifiedStaffApi('post','/staff-passes',teacher).send(body)).status,403);
+ const result=await verifiedStaffApi('post','/staff-passes').send(body);assert.equal(result.status,201,JSON.stringify(result.body));
+ const id=result.body.data._id;assert.equal(result.body.data.staffModel,'StaffMember');
+ const list=await api('get','/staff-passes');assert.equal(list.body.data.items.find(p=>p._id===id).staff.name,'Directory Teacher');
+ assert.equal((await api('post',`/staff-passes/${id}/approve`).send({})).status,200);
+ assert.equal((await api('post',`/staff-passes/${id}/exit`,guard).send({gate:'Main Gate'})).status,200);
+ assert.equal((await api('post',`/staff-passes/${id}/return`,guard).send({gate:'Main Gate'})).status,200);
+ assert.equal(await User.countDocuments({employeeId:'DIR-001'}),0);
+ await models.StaffMember.updateOne({_id:member._id},{$set:{active:false}});
+ assert.equal((await verifiedStaffApi('post','/staff-passes').send(body)).status,404);
+});
+
+test('directory import cannot bypass self-approval through a separate staff profile',async()=>{
+ const member=await models.StaffMember.create({employeeId:'DIR-SELF',name:admin.name,email:admin.email});
+ const result=await verifiedStaffApi('post','/staff-passes').send({staff:String(member._id),department:'Office',reason:'Personal work',expectedReturn:new Date(Date.now()+3600000).toISOString()});
+ assert.equal(result.status,201);
+ assert.equal((await api('post',`/staff-passes/${result.body.data._id}/approve`).send({})).status,403);
+ assert.equal((await models.StaffPass.findById(result.body.data._id)).status,'REQUESTED');
+});
+
+test('staff directory edits validate photos and restrict deletion of active movements',async()=>{
+ const member=await models.StaffMember.create({employeeId:'DIR-EDIT',name:'Edit Staff'});
+ const body={employeeId:'DIR-EDIT',name:'Updated Staff',staffRole:'teacher',designation:'Maths',mobile:'+919876543210',email:'edit@school.test',photo:'/api/uploads/abcdef12.jpg',address:'School road',dateOfBirth:null,dateOfJoining:null,active:true};
+ assert.equal((await api('put',`/staff-directory/${member._id}`,teacher).send(body)).status,403);
+ assert.equal((await api('put',`/staff-directory/${member._id}`).send({...body,photo:'https://example.com/photo.jpg'})).status,400);
+ assert.equal((await api('put',`/staff-directory/${member._id}`).send(body)).status,200);
+ assert.equal((await models.StaffMember.findById(member._id)).photo,body.photo);
+ const pass=await models.StaffPass.create({passNumber:'DIR-EDIT-PASS',staff:member._id,staffModel:'StaffMember',status:'EXITED'});
+ assert.equal((await api('delete',`/staff-directory/${member._id}`)).status,409);
+ assert.equal((await api('put',`/staff-directory/${member._id}`).send({...body,active:false})).status,409);
+ await models.StaffPass.updateOne({_id:pass._id},{$set:{status:'RETURNED'}});
+ assert.equal((await api('delete',`/staff-directory/${member._id}`,teacher)).status,403);
+ assert.equal((await api('delete',`/staff-directory/${member._id}`)).status,200);
+ const list=await api('get','/staff-directory');assert.ok(!list.body.data.items.some(s=>s._id===String(member._id)));
+ const history=await models.StaffPass.findById(pass._id).populate('staff');assert.equal(history.staff.name,'Updated Staff');
+ assert.equal((await models.StaffMember.findById(member._id)).active,false);
+ assert.ok(await AuditLog.exists({entityId:member._id,action:'STAFF_DIRECTORY_DELETED'}));
+});
+
+test('student and directory staff status actions move records between active and inactive lists',async()=>{
+ const s=await Student.create({name:'Status Student',admissionNumber:'STATUS-STUDENT',className:'8',section:'VENUS',primaryMobile:'+919876543210'});
+ assert.equal((await api('patch',`/students/${s._id}/status`,teacher).send({status:'INACTIVE'})).status,403);
+ assert.equal((await api('patch',`/students/${s._id}/status`).send({status:'INVALID'})).status,400);
+ assert.equal((await api('patch',`/students/${s._id}/status`).send({status:'INACTIVE'})).status,200);
+ const disabled=await api('get','/students?status=INACTIVE&q=STATUS-STUDENT');assert.equal(disabled.body.data.total,1);
+ assert.equal((await api('get','/students?status=ACTIVE&q=STATUS-STUDENT')).body.data.total,0);
+ assert.equal((await api('patch',`/students/${s._id}/status`).send({status:'ACTIVE'})).status,200);
+ const member=await models.StaffMember.create({name:'Status Staff',employeeId:'STATUS-STAFF'});
+ assert.equal((await api('patch',`/staff-directory/${member._id}/status`,teacher).send({active:false})).status,403);
+ assert.equal((await api('patch',`/staff-directory/${member._id}/status`).send({active:false})).status,200);
+ const listing=await api('get','/staff-directory');assert.equal(listing.body.data.items.find(s=>s._id===String(member._id)).active,false);
+ assert.equal((await api('patch',`/staff-directory/${member._id}/status`).send({active:true})).status,200);
+ await models.StaffPass.create({passNumber:'STATUS-ACTIVE',staff:member._id,staffModel:'StaffMember',status:'EXITED'});
+ assert.equal((await api('patch',`/staff-directory/${member._id}/status`).send({active:false})).status,409);
+ assert.equal((await models.StaffMember.findById(member._id)).active,true);
+});
+
+test('staff gate pass print requires approval, ownership and current validity',async()=>{
+ const pass=await models.StaffPass.create({passNumber:'STAFF-PRINT',staff:teacher._id,staffModel:'User',department:'Teaching',reason:'Personal work',expectedReturn:new Date(Date.now()+3600000),status:'REQUESTED'});
+ assert.equal((await api('get',`/staff-passes/${pass._id}/print`)).status,409);
+ await models.StaffPass.updateOne({_id:pass._id},{$set:{status:'APPROVED',approvedBy:admin._id}});
+ const result=await api('get',`/staff-passes/${pass._id}/print`,teacher);assert.equal(result.status,200);assert.equal(result.body.data.staff.name,teacher.name);
+ assert.equal((await api('get',`/staff-passes/${pass._id}/print`,other)).status,404);
+ await models.StaffPass.updateOne({_id:pass._id},{$set:{expectedReturn:new Date(Date.now()-1000)}});
+ assert.equal((await api('get',`/staff-passes/${pass._id}/print`)).status,409);
+});
+
+test('staff pass permits no expected return and still supports approval and exit',async()=>{
+ const noReturnMember=await models.StaffMember.create({employeeId:'NO-RET-01',name:'No Return Staff',staffRole:'teacher'});
+ const result=await verifiedStaffApi('post','/staff-passes').send({staff:String(noReturnMember._id),department:'Teaching',reason:'Personal work',expectedReturn:null});
+ assert.equal(result.status,201,JSON.stringify(result.body));const id=result.body.data._id;
+ assert.equal((await api('post',`/staff-passes/${id}/approve`).send({})).status,200);
+ assert.equal((await api('get',`/staff-passes/${id}/print`)).status,200);
+ assert.equal((await api('post',`/staff-passes/${id}/exit`,guard).send({gate:'Main Gate'})).status,200);
+ assert.equal((await api('post',`/staff-passes/${id}/exit`,guard).send({gate:'Main Gate'})).status,409);
+});
+
+test('staff creation requires a bound single-use OTP and exposes verified request receipt',async()=>{
+ const member=await models.StaffMember.create({employeeId:'OTP-STAFF',name:'OTP Staff',email:'otpstaff@school.test'});
+ const body={staff:String(member._id),department:'Teaching',reason:'Personal work',expectedReturn:null};
+ assert.equal((await api('post','/staff-passes').send(body)).status,400);
+ const {staffContext}=await import('../services/staff-otp.service.js');
+ const {fingerprint}=await staffContext({user:admin},body);
+ const challenge=await models.StaffOTP.create({staff:member._id,requestedBy:admin._id,fingerprint,digest:await bcrypt.hash('123456',4),channel:'email',sentAt:new Date(),expiresAt:new Date(Date.now()+300000),attempts:0,delivered:true,consumed:false});
+ assert.equal((await api('post','/staff-passes').send({...body,challengeId:String(challenge._id),otp:'000000'})).status,400);
+ const created=await api('post','/staff-passes').send({...body,challengeId:String(challenge._id),otp:'123456'});assert.equal(created.status,201,JSON.stringify(created.body));assert.ok(created.body.data.staffVerifiedAt);
+ assert.equal((await api('get',`/staff-passes/${created.body.data._id}/print`)).status,200);
+ assert.equal((await api('post','/staff-passes').send({...body,challengeId:String(challenge._id),otp:'123456'})).status,409);
+ assert.equal((await api('post',`/staff-passes/${created.body.data._id}/exit`,guard).send({gate:'Main Gate'})).status,409);
+});
+
+// Existing movement tests use a verified OTP fixture; OTP behavior is tested separately.
+function verifiedStaffApi(method,path,user=admin){return {send:async body=>{
+ const credentials={challengeId:String(new mongoose.Types.ObjectId()),otp:'123456'};
+ try{
+ const {staffContext}=await import('../services/staff-otp.service.js');
+ const {fingerprint}=await staffContext({user},body);
+ const challenge=await models.StaffOTP.findOneAndUpdate({staff:body.staff},{$set:{requestedBy:user._id,fingerprint,digest:await bcrypt.hash(credentials.otp,4),channel:'email',sentAt:new Date(),expiresAt:new Date(Date.now()+300000),attempts:0,delivered:true,consumed:false}},{upsert:true,new:true});credentials.challengeId=String(challenge._id);
+ }catch{}
+ return api(method,path,user).send({...body,...credentials});
+}};}
+
+test('pending staff requests are filtered before the result limit and leave queue on approval',async()=>{
+ const pending=await models.StaffPass.create({passNumber:'PENDING-QUEUE',staff:teacher._id,department:'Teaching',status:'REQUESTED'});
+ const completed=await models.StaffPass.create({passNumber:'PENDING-QUEUE-DONE',staff:teacher._id,status:'RETURNED'});
+ const list=await api('get','/staff-passes?status=REQUESTED');assert.equal(list.status,200);assert.ok(list.body.data.items.some(p=>p._id===String(pending._id)));assert.ok(!list.body.data.items.some(p=>p._id===String(completed._id)));assert.ok(list.body.data.items.every(p=>p.status==='REQUESTED'));
+ const movements=await api('get','/staff-passes?excludePending=true');assert.ok(movements.body.data.items.every(p=>p.status!=='REQUESTED'));assert.ok(movements.body.data.items.some(p=>p._id===String(completed._id)));
+ assert.equal((await api('post',`/staff-passes/${pending._id}/approve`).send({})).status,200);
+ assert.ok(!(await api('get','/staff-passes?status=REQUESTED')).body.data.items.some(p=>p._id===String(pending._id)));
+ assert.equal((await api('get','/staff-passes?status=invalid')).status,400);
+});
+
+test('staff gate pass generates scannable QR and supports gate verification and exit scan',async()=>{
+ const qrMember=await models.StaffMember.create({employeeId:'EMP-QR',name:'QR Test Staff',staffRole:'teacher'});
+ const created=await verifiedStaffApi('post','/staff-passes').send({staff:String(qrMember._id),department:'Teaching',reason:'Campus exit test',expectedReturn:new Date(Date.now()+7200000).toISOString()});
+ assert.equal(created.status,201);
+ const sid=created.body.data._id;
+ assert.equal((await api('post',`/staff-passes/${sid}/approve`).send({})).status,200);
+ const printable=await api('get',`/staff-passes/${sid}/print`);
+ assert.equal(printable.status,200);
+ assert.ok(printable.body.data.image && printable.body.data.image.startsWith('data:image/png;base64,'));
+ const approved=await models.StaffPass.findById(sid);
+ const token=qrToken(approved);
+ const verifyResult=await api('get',`/gatepasses/verify/${token}`,guard);
+ assert.equal(verifyResult.status,200);
+ assert.equal(verifyResult.body.data.entityType,'StaffPass');
+ assert.equal(verifyResult.body.data.valid,true);
+ assert.equal(verifyResult.body.data.pass.staff.name,qrMember.name);
+ const manualResult=await api('get',`/gatepasses/manual/${approved.passNumber}`,guard);
+ assert.equal(manualResult.status,200);
+ assert.equal(manualResult.body.data.entityType,'StaffPass');
+ const scanResult=await api('post','/gatepasses/scan',guard).send({token,gate:'Main Gate'});
+ assert.equal(scanResult.status,200);
+ assert.equal(scanResult.body.data.status,'EXIT_ALLOWED');
+ assert.equal(scanResult.body.data.staff.name,qrMember.name);
+ assert.equal(scanResult.body.data.gatePass.status,'EXITED');
+ const exited=await models.StaffPass.findById(sid);
+ assert.equal(exited.status,'EXITED');
+ assert.ok(exited.exitTime);
+});
+
+test('a staff member or teacher can only have one gate pass generated per day',async()=>{
+ const member=await models.StaffMember.create({employeeId:'EMP-DIR-DAILY',name:'Directory Daily Staff',staffRole:'teacher',email:'dirstaff@school.test'});
+ const body={staff:String(member._id),department:'Science',reason:'First movement today',expectedReturn:new Date(Date.now()+3600000).toISOString()};
+
+ // First pass creation succeeds and records passDate
+ const first=await verifiedStaffApi('post','/staff-passes').send(body);
+ assert.equal(first.status,201);
+ assert.equal(first.body.data.passDate,schoolDate());
+
+ // Attempting to send OTP for a second pass on the same day is rejected with 409
+ const secondOtp=await api('post','/staff-passes/send-otp').send({...body,channel:'email'});
+ assert.equal(secondOtp.status,409);
+ assert.match(secondOtp.body.message,/Only one gate pass per day is permitted/i);
+
+ // Attempting to create a second pass on the same day is rejected with 409
+ const secondPass=await verifiedStaffApi('post','/staff-passes').send({...body,reason:'Second movement today'});
+ assert.equal(secondPass.status,409);
+ assert.match(secondPass.body.message,/Only one gate pass per day is permitted/i);
+
+ // Also check staff directory status flag
+ const dirList=await api('get','/staff-directory');
+ const found=dirList.body.data.items.find(s=>s.employeeId==='EMP-DIR-DAILY');
+ assert.ok(found);
+ assert.equal(found.hasPassToday,true);
+});
+
