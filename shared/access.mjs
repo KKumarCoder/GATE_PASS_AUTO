@@ -44,6 +44,7 @@ export const dependencies = {
 };
 export const isAdmin = user => ['SUPER_ADMIN','ADMIN'].includes(user?.role);
 export const permissionsFor = user => {
+  if (user?.scannerOnly && user?.role === 'SECURITY_GUARD') return ['gate.verify','gate.move'];
   if (isAdmin(user)) return permissionKeys;
   const permissions = user?.permissions ?? roleDefaults[user?.role] ?? [];
   return user?.role === 'SECURITY_GUARD'
@@ -64,6 +65,7 @@ export function togglePermission(values,key,enabled) {
 }
 export const assignedGateFor = user => user?.assignedGate || (user?.role === 'SECURITY_GUARD' ? 'Main Gate' : '');
 export const homeFor = user => {
+  if (user?.scannerOnly) return '/gate/scanner';
   const choices = [['reports.view','/'],['passes.view','/gatepasses'],['gate.verify','/guard'],['bus-swaps.view','/bus-swaps'],['students.view','/students'],['visitors.view','/visitors'],['staff.view','/staff'],['logs.view','/logs'],['notifications.view','/notifications'],['settings.manage','/settings']];
   return choices.find(([key])=>can(user,key))?.[1] || '/no-access';
 };

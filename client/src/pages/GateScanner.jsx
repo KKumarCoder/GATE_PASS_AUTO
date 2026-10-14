@@ -72,6 +72,7 @@ export default function GateScanner() {
   const settings = useData('/settings');
   const scannerInput = useRef(null);
   const resetTimer = useRef(null);
+  const scanTimer = useRef(null);
   const processing = useRef(false);
   const audioContext = useRef(null);
   const [buffer, setBuffer] = useState('');
@@ -97,10 +98,22 @@ export default function GateScanner() {
       if (!document.hidden && !processing.current && !usingControl) scannerInput.current?.focus({ preventScroll: true });
     };
     const onPointerUp = () => window.setTimeout(refocus, 250);
+    const captureKey = event => {
+      if (processing.current || event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) return;
+      const active = document.activeElement;
+      if (active === scannerInput.current || active?.matches?.('input,select,textarea,[contenteditable="true"]')) return;
+      // Preserve the first character even when keydown targeted the page/button.
+      event.preventDefault();
+      setBuffer(event.key);
+      setState('SCANNING');
+      scannerInput.current?.focus({ preventScroll: true });
+    };
+    window.addEventListener('keydown', captureKey, true);
     window.addEventListener('focus', refocus);
     window.addEventListener('pointerup', onPointerUp);
     document.addEventListener('visibilitychange', refocus);
     return () => {
+      window.removeEventListener('keydown', captureKey, true);
       window.removeEventListener('focus', refocus);
       window.removeEventListener('pointerup', onPointerUp);
       document.removeEventListener('visibilitychange', refocus);
@@ -109,6 +122,7 @@ export default function GateScanner() {
 
   useEffect(() => () => {
     window.clearTimeout(resetTimer.current);
+    window.clearTimeout(scanTimer.current);
     audioContext.current?.close().catch(() => {});
   }, []);
 
@@ -132,6 +146,7 @@ export default function GateScanner() {
   async function scan(raw) {
     if (processing.current) return;
     processing.current = true;
+    window.clearTimeout(scanTimer.current);
     setBuffer('');
     setResult(null);
     const token = tokenFromScan(raw);
@@ -155,14 +170,16 @@ export default function GateScanner() {
 
   function handleScannerKeyDown(event) {
     if (event.key.length === 1) unlockAudio(audioContext);
-    if (event.key === 'Enter') {
+    if (event.key === 'Enter' || event.key === 'Tab') {
       event.preventDefault();
       const raw = event.currentTarget.value || buffer;
       event.currentTarget.value = '';
-      void scan(raw);
+      if (raw.trim()) void scan(raw);
     } else if (event.key === 'Escape') {
       event.currentTarget.value = '';
       setBuffer('');
+      window.clearTimeout(scanTimer.current);
+      if (!processing.current) setState('READY');
     }
   }
 
@@ -174,21 +191,6 @@ export default function GateScanner() {
     <main className="scanner-kiosk" onClick={event => {
       if (event.target === event.currentTarget && isReady) scannerInput.current?.focus({ preventScroll: true });
     }}>
-      <input
-        ref={scannerInput}
-        className="scanner-capture"
-        aria-label="QR scanner keyboard input"
-        autoComplete="off"
-        autoCapitalize="off"
-        spellCheck="false"
-        value={buffer}
-        onChange={event => { setBuffer(event.target.value); setState(event.target.value ? 'SCANNING' : 'READY'); }}
-        onKeyDown={handleScannerKeyDown}
-        onPaste={event => {
-          event.preventDefault();
-          void scan(event.clipboardData.getData('text'));
-        }}
-      />
       <header className="scanner-topbar">
         <div className="scanner-brand"><img src={crest} alt="Shree Ram Public School"/><div><strong>SHREE RAM PUBLIC SCHOOL</strong><span>SMART GATE PASS</span></div></div>
         <div className="scanner-controls">
@@ -198,9 +200,33 @@ export default function GateScanner() {
             </select>
           </label>
           <span className={`scanner-status scanner-status-${state.toLowerCase()}`} role="status"><i/>{statusLabel}</span>
-          <button className="scanner-logout" onClick={() => logout().catch(() => {})}><LogOut size={17}/> Sign out</button>
         </div>
       </header>
+      <input
+        ref={scannerInput}
+        className="scanner-capture"
+        readOnly={processing.current}
+        aria-label="QR scanner keyboard input"
+        autoComplete="off"
+        autoCapitalize="off"
+        spellCheck="false"
+        value={buffer}
+        onChange={event => {
+          if (processing.current) return;
+          const raw = event.target.value;
+          setBuffer(raw);
+          setState(raw ? 'SCANNING' : 'READY');
+          window.clearTimeout(scanTimer.current);
+          // Some keyboard scanners send no Enter suffix. Wait until a complete,
+          // valid payload stops changing; never submit a partial scan.
+          if (tokenFromScan(raw)) scanTimer.current = window.setTimeout(() => void scan(raw), 300);
+        }}
+        onKeyDown={handleScannerKeyDown}
+        onPaste={event => {
+          event.preventDefault();
+          void scan(event.clipboardData.getData('text'));
+        }}
+      />
       <section className={`scanner-panel scanner-panel-${state.toLowerCase()}`} aria-live="polite">
         {!inResult && <>
           <div className="scanner-eyebrow"><ShieldCheck size={17}/> GATE PASS VERIFICATION</div>
@@ -211,6 +237,8 @@ export default function GateScanner() {
           </div>
           <div className="scanner-ready-text">{state === 'VERIFYING' ? 'PLEASE WAIT' : state === 'SCANNING' ? 'SCANNING' : 'READY TO SCAN'}</div>
           <p className="scanner-hint">Present the Gate Pass QR to the POSLOW T-6900 scanner.</p>
+          {state !== 'VERIFYING' && <button type="button" className="button secondary" onClick={() => { unlockAudio(audioContext); scannerInput.current?.focus({ preventScroll: true }); }}>Activate scanner</button>}
+          {state !== 'VERIFYING' && <p className="scanner-hint">If the scanner beeps without a result, click Activate scanner and scan again.</p>}
         </>}
         {inResult && state === 'EXIT_ALLOWED' && <>
           <div className="scanner-result-icon success"><CheckCircle2 size={76}/></div>
@@ -249,7 +277,7 @@ export default function GateScanner() {
         <input id="scanner-test-input" value={manualValue} onChange={event => setManualValue(event.target.value)} placeholder="Paste a Gate Pass QR URL or token"/>
         <button disabled={!isReady}>Test Scan</button>
       </form>}
-      <footer className="scanner-footer"><span><ShieldCheck size={15}/> Only an authenticated, authorized exit scan can record student movement.</span><span>{user?.name}</span></footer>
+      <footer className="scanner-footer"><span><ShieldCheck size={15}/> Only an authenticated, authorized exit scan can record student movement.</span><div className="scanner-footer-account"><span>{user?.name}</span><button className="scanner-logout" onClick={() => logout().catch(() => {})}><LogOut size={17}/> Sign out</button></div></footer>
     </main>
   );
 }

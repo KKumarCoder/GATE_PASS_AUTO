@@ -20,6 +20,7 @@ import { authenticate, permit, admins, requirePermission, enforceGate, can } fro
 import { validate, studentSchema, visitorSchema, staffSchema, busStaffSchema, userSchema, accessSchema, settingsSchema, objectId, text, pageNumber } from '../validators/index.js';
 import { wrap, ok, assert, audit, transaction, escapeRegex, number, event } from '../utils/core.js';
 import { assignQR, qrImage } from '../services/qr/qr.service.js';
+import { guardPinLookup } from '../utils/guard-pin.js';
 const router=Router();router.use(authenticate);
 const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:5*1024*1024,files:1}});
 async function validateWorkbookArchive(buffer){await new Promise((resolve,reject)=>yauzl.fromBuffer(buffer,{lazyEntries:true},(err,zip)=>{if(err)return reject(err);let total=0,count=0;zip.on('error',reject);zip.on('entry',entry=>{total+=entry.uncompressedSize;count++;if(total>25*1024*1024||count>1000){zip.close();return reject(new Error('Workbook archive is too large.'));}zip.readEntry();});zip.on('end',resolve);zip.readEntry();}));}
@@ -150,7 +151,7 @@ router.get('/users',permit(...admins),wrap(async(req,res)=>{
   const passesToday=await StaffPass.find({$or:[{passDate:today},{passDate:{$exists:false},$expr:{$eq:[{$dateToString:{format:'%Y-%m-%d',date:'$createdAt',timezone:'Asia/Kolkata'}},today]}}]}).select('staff employeeId');
   const passEmpIds=new Set(passesToday.map(p=>p.employeeId).filter(Boolean));
   const passStaffIds=new Set(passesToday.map(p=>String(p.staff)));
-  const users=await User.find().select('name email mobile employeeId role department active permissions assignedGate').sort({name:1}).limit(500);
+  const users=await User.find().select('name email mobile employeeId role department active permissions assignedGate scannerOnly').sort({name:1}).limit(500);
   const items=users.map(u=>{const obj=u.toObject();obj.hasPassToday=passEmpIds.has(u.employeeId)||passStaffIds.has(String(u._id));return obj;});
   ok(res,{items});
 }));
@@ -169,12 +170,28 @@ router.patch('/users/:id',permit(...admins),validate(accessSchema),wrap(async(re
     assert(user.role!=='SUPER_ADMIN'&&(req.user.role==='SUPER_ADMIN'||user.role!=='ADMIN'),403,'This administrator account is protected.');
     assert(req.body.role!=='SUPER_ADMIN'&&(req.user.role==='SUPER_ADMIN'||req.body.role!=='ADMIN'),403,'Only a super administrator can appoint administrators.');
     const before={role:user.role,permissions:permissionsFor(user),assignedGate:assignedGateFor(user),active:user.active,mobile:user.mobile};
-    if(req.body.role && req.body.role!==user.role){user.permissions=undefined;user.assignedGate=undefined;}
+    if(req.body.role && req.body.role!==user.role){user.permissions=undefined;user.assignedGate=undefined;user.guardPinHash=undefined;user.guardPinLookup=undefined;user.scannerOnly=false;}
     user.set(req.body);if(isAdmin(user))user.permissions=undefined;
     await validateGate(user);user.sessionVersion+=1;
     await user.save({session});await Session.deleteMany({user:user._id}).session(session);
     await audit(req,'USER_ACCESS_CHANGED',user._id,{before,after:{role:user.role,permissions:permissionsFor(user),assignedGate:assignedGateFor(user),active:user.active,mobile:user.mobile}},session);
   });ok(res,{},'Access updated. The staff member must sign in again.');
+}));
+router.patch('/users/:id/pin',permit(...admins),validate(z.object({pin:z.string().regex(/^\d{6}$/)}).strict()),wrap(async(req,res)=>{
+  objectId.parse(req.params.id);
+  const pinHash=await bcrypt.hash(req.body.pin,12),lookup=guardPinLookup(req.body.pin);
+  try {
+    await transaction(async session=>{
+      const user=await User.findById(req.params.id).session(session);
+      assert(user,404,'User not found.');
+      assert(user.role==='SECURITY_GUARD',400,'PIN login is only available for security guards.');
+      assert(!await User.exists({_id:{$ne:user._id},guardPinLookup:lookup}).session(session),409,'This PIN is already in use. Choose another PIN.');
+      user.guardPinHash=pinHash;user.guardPinLookup=lookup;user.scannerOnly=true;user.sessionVersion+=1;
+      await user.save({session});await Session.deleteMany({user:user._id}).session(session);
+      await audit(req,'GUARD_PIN_SET',user._id,{},session);
+    });
+  } catch(e) { if(e.code===11000) assert(false,409,'This PIN is already in use. Choose another PIN.'); throw e; }
+  ok(res,{},'PIN saved. This guard can access only the Gate Scanner.');
 }));
 router.patch('/users/:id/password',permit(...admins),validate(z.object({password:z.string().min(12).max(128)}).strict()),wrap(async(req,res)=>{
   objectId.parse(req.params.id);assert(req.params.id!==String(req.user._id),400,'You cannot change your own password here.');

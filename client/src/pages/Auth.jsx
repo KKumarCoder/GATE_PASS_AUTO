@@ -8,7 +8,9 @@ import { Brand, Field, ErrorState, DataState, time } from "../components/UI";
 import { post, message } from "../services/api";
 import { useData } from "../hooks/useData";
 export function Login() {
-  const { login } = useAuth(),
+  const { login, loginPin } = useAuth(),
+    [pinMode,setPinMode] = useState(false),
+    [pin,setPin] = useState(""),
     navigate = useNavigate(),
     location = useLocation(),
     [error, setError] = useState("");
@@ -16,7 +18,7 @@ export function Login() {
     register,
     handleSubmit,
     formState: { isSubmitting },
-  } = useForm();
+  } = useForm({ shouldUnregister: true });
   return (
     <div className="auth-page">
       <div className="auth-story">
@@ -51,11 +53,13 @@ export function Login() {
         <div className="login-card">
           <span className="pill">SRPS SMART GATE PASS</span>
           <h2>Welcome back.</h2>
-          <p>Sign in to your school workspace.</p>
+          <p>{pinMode ? "गार्ड: अपना 6 अंकों का PIN डालें" : "Sign in to your school workspace."}</p>
+          <button type="button" className="button secondary full" onClick={()=>{setPinMode(!pinMode);setError("");setPin("");}}>{pinMode ? "Staff login · Email / Password" : "गार्ड लॉगिन · Guard PIN"}</button>
           <form
             onSubmit={handleSubmit(async (values) => {
               setError("");
               try {
+                if(pinMode){await loginPin(pin);navigate("/gate/scanner");return;}
                 await login(values);
                 navigate(location.state?.from || "/");
               } catch (e) {
@@ -63,11 +67,11 @@ export function Login() {
               }
             })}
           >
-            <Field label="Email or employee ID">
+            {pinMode ? <Field label="6-digit PIN"><input aria-label="6-digit PIN" type="password" inputMode="numeric" pattern="[0-9]{6}" minLength={6} maxLength={6} autoComplete="off" required value={pin} onChange={e=>setPin(e.target.value.replace(/[^0-9]/g,""))} style={{fontSize:32,textAlign:"center",letterSpacing:12}}/></Field> : <><Field label="Email or employee ID">
               <input
                 autoComplete="username"
                 placeholder="Enter your email or employee ID"
-                {...register("identifier", { required: true })}
+                {...register("identifier", { required: !pinMode })}
               />
             </Field>
             <Field label="Password">
@@ -75,13 +79,14 @@ export function Login() {
                 type="password"
                 autoComplete="current-password"
                 placeholder="Enter your password"
-                {...register("password", { required: true })}
+                {...register("password", { required: !pinMode })}
               />
             </Field>
+            </>}
             {error && <ErrorState error={error} />}
             <button className="button primary full" disabled={isSubmitting}>
               {isSubmitting && <AppLoader inline label="Processing…" />}
-              {isSubmitting ? "Signing in…" : "Sign in securely"}
+              {isSubmitting ? "Signing in…" : pinMode ? "स्कैनर खोलें · Open scanner" : "Sign in securely"}
               <ArrowRight size={18} />
             </button>
           </form>

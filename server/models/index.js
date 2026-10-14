@@ -33,6 +33,9 @@ export const User = make("User", {
   email: { type: String, required: true, unique: true, lowercase: true },
   employeeId: { type: String, required: true, unique: true },
   mobile: { type: String, trim: true },
+  guardPinLookup: { type: String, select: false, unique: true, sparse: true },
+  guardPinHash: { type: String, select: false },
+  scannerOnly: { type: Boolean, default: false },
   passwordHash: { type: String, required: true, select: false },
   role: { type: String, enum: roles, required: true },
   permissions: { type: [String], default: undefined },
@@ -234,6 +237,13 @@ export const GatePass = make(
     [{ "qr.shareTokenHash": 1 }, { unique: true, sparse: true }],
   ],
 );
+// Deleted passes stay outside the active collection so all scanners and reports exclude them.
+export const DeletedGatePass = make("DeletedGatePass", {
+  originalId: { ...ref("GatePass"), unique: true, required: true },
+  pass: { type: Schema.Types.Mixed, required: true },
+  deletedBy: ref("User"),
+  deletedAt: { type: Date, required: true },
+});
 export const GatePassDailyLock = make(
   "GatePassDailyLock",
   {

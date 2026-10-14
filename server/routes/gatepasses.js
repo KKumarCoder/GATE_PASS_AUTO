@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
-import { BusDriver, GateEvent, GatePass, GatePassDailyLock, OTPVerification, Notification, Student, SystemSetting, VisitorPass, StaffPass } from '../models/index.js';
+import { BusDriver, GateEvent, GatePass, DeletedGatePass, GatePassDailyLock, OTPVerification, Notification, Student, SystemSetting, VisitorPass, StaffPass } from '../models/index.js';
 import { authenticate, requirePermission, enforceGate, can } from '../middleware/auth.js';
 import { validate, passSchema, objectId, text, pageNumber } from '../validators/index.js';
 import { wrap, ok, assert, transaction, number, event, audit, token, hash, escapeRegex } from '../utils/core.js';
@@ -61,6 +61,8 @@ function scannerDenial(res,status,message,eventType){
   return res.status(status).json({success:false,status:'EXIT_DENIED',reason:eventType,message,data:{}});
 }
 router.get('/',requirePermission('passes.view'),wrap(async(req,res)=>{
+  const deleted=req.query.deleted==='true';
+  assert(!deleted||can(req.user,'passes.approve'),403,'Only administrators can view deleted passes.');
   const query={...scoped(req)};
   if(req.query.status) query.status=String(req.query.status);
   if(req.query.q) query.gatePassNumber={$regex:escapeRegex(String(req.query.q).slice(0,100)),$options:'i'};
@@ -77,7 +79,15 @@ router.get('/',requirePermission('passes.view'),wrap(async(req,res)=>{
     assert(!query['timing.requestedExit'].$gte||!query['timing.requestedExit'].$lt||query['timing.requestedExit'].$gte<query['timing.requestedExit'].$lt,400,'From date must not be after to date.');
   }
   const page=pageNumber.parse(req.query.page), limit=z.coerce.number().int().min(5).max(100).default(30).parse(req.query.limit);
-  const [items,total]=await Promise.all([GatePass.find(query).populate(populate).sort({createdAt:-1}).skip((page-1)*limit).limit(limit),GatePass.countDocuments(query)]);
+  let items,total;
+  if(deleted){
+    const archivedQuery=Object.fromEntries(Object.entries(query).map(([key,value])=>[`pass.${key}`,value]));
+    const records=await DeletedGatePass.find(archivedQuery).sort({deletedAt:-1}).skip((page-1)*limit).limit(limit).lean();
+    items=await GatePass.populate(records.map(record=>({...record.pass,deletedAt:record.deletedAt})),populate);
+    total=await DeletedGatePass.countDocuments(archivedQuery);
+  }else{
+    [items,total]=await Promise.all([GatePass.find(query).populate(populate).sort({createdAt:-1}).skip((page-1)*limit).limit(limit),GatePass.countDocuments(query)]);
+  }
   ok(res,{items,total,page,limit});
 }));
 router.post('/scan',requirePermission('gate.move'),validate(z.object({token:z.string().regex(/^[a-fA-F0-9]{64}$/),gate:text.max(60)}).strict()),enforceGate,wrap(async(req,res)=>{
@@ -181,6 +191,11 @@ router.post('/',requirePermission('passes.create'),validate(passSchema),wrap(asy
       {passDate:{$exists:false},$expr:{$in:[{$dateToString:{format:'%Y-%m-%d',date:'$timing.requestedExit',timezone:'Asia/Kolkata'}},dates]}},
     ]}).session(session);
     assert(!sameDayPass,409,'This student already has a gate pass for this date.');
+    const deletedPass=await DeletedGatePass.exists({'pass.student':student._id,$or:[
+      {'pass.passDate':{$in:dates}},
+      {'pass.recurring.enabled':true,'pass.passDate':{$lte:dates[dates.length-1]},'pass.recurring.endDate':{$gte:dates[0]}},
+    ]}).session(session);
+    assert(!deletedPass,409,'A deleted gate pass exists for this date. Ask an administrator to restore it from Gate passes → Deleted passes.');
     await GatePassDailyLock.create(dates.map(date=>({student:student._id,passDate:date})),{session,ordered:true});
     if(input.busNumber)assert(await BusDriver.exists({busNumber:input.busNumber}).session(session),400,'Select a bus number from the configured driver list.');
     const [pass]=await GatePass.create([{gatePassNumber:await number('GP',session),student:student._id,passDate,recurring:recurring?{enabled:true,period:input.recurrence,endDate:input.validUntil,exitTime:schoolTime(input.requestedExit),exits:[]}:undefined,busNumber:input.busNumber||undefined,busDriverNoticeStatus:input.busNumber?'PENDING':undefined,requestedBy:req.user._id,requestType:input.requestType,reason:input.reason,guardian:input.guardian,
@@ -206,13 +221,41 @@ router.delete('/:id',requirePermission('passes.approve'),wrap(async(req,res)=>{
       const passDate=record.passDate||schoolDate(record.timing.requestedExit);
       await GatePassDailyLock.updateOne({student:record.student,passDate},{$setOnInsert:{student:record.student,passDate}},{upsert:true,session});
     }
+    const snapshot=record.toObject();
+    // Pending parent approvals must use a newly issued OTP/link after restoration.
+    delete snapshot.approvalLinkHash;
+    delete snapshot.approvalLinkExpires;
+    await DeletedGatePass.create([{originalId:record._id,pass:snapshot,deletedBy:req.user._id,deletedAt:new Date()}],{session});
     await OTPVerification.deleteOne({gatePass:record._id},{session});
     await Notification.deleteMany({gatePass:record._id},{session});
     await record.deleteOne({session});
     await audit(req,'GATE_PASS_DELETED',record._id,{gatePassNumber:record.gatePassNumber,status:record.status},session);
     return record.gatePassNumber;
   });
-  ok(res,{},`Gate pass ${pass} deleted permanently. Audit and gate-event history retained.`);
+  ok(res,{},`Gate pass ${pass} moved to Deleted passes. It can be restored by an administrator.`);
+}));
+router.post('/:id/restore',requirePermission('passes.approve'),wrap(async(req,res)=>{
+  objectId.parse(req.params.id);
+  const restored=await transaction(async session=>{
+    const archived=await DeletedGatePass.findOne({originalId:req.params.id}).session(session);
+    assert(archived,404,'Deleted gate pass not found. It may already have been restored.');
+    const snapshot=archived.pass;
+    const start=snapshot.passDate||schoolDate(snapshot.timing.requestedExit);
+    const end=snapshot.recurring?.enabled?snapshot.recurring.endDate:start;
+    const dates=validityDates(start,end);
+    const active=await GatePass.find({student:snapshot.student}).session(session);
+    assert(!active.some(pass=>{
+      const first=pass.passDate||schoolDate(pass.timing.requestedExit);
+      const last=pass.recurring?.enabled?pass.recurring.endDate:first;
+      return first<=end&&last>=start;
+    }),409,'Another gate pass exists for these dates. Restore was not applied.');
+    for(const passDate of dates)await GatePassDailyLock.updateOne({student:snapshot.student,passDate},{$setOnInsert:{student:snapshot.student,passDate}},{upsert:true,session});
+    const [pass]=await GatePass.create([snapshot],{session});
+    await DeletedGatePass.deleteOne({_id:archived._id},{session});
+    await audit(req,'GATE_PASS_RESTORED',pass._id,{gatePassNumber:pass.gatePassNumber,status:pass.status},session);
+    return pass;
+  });
+  ok(res,restored,'Gate pass restored. Original validity and movement status are unchanged.');
 }));
 router.get('/verify/:token',requirePermission('gate.verify'),wrap(async(req,res)=>{
   z.string().length(64).parse(req.params.token);

@@ -6,6 +6,15 @@ import {api,post} from '../services/api';
 import {PageTitle,DataState,Table,Empty,Badge,Modal,Field,Avatar,act,pretty} from '../components/UI';
 import {isAdmin,permissionsFor,roleDefaults,permissionLabels,togglePermission,assignedGateFor} from '../../../shared/access.mjs';
 
+function PinForm({account,onSaved}) {
+  const [busy,setBusy]=useState(false);
+  return <form onSubmit={async e=>{e.preventDefault();const pin=new FormData(e.currentTarget).get('pin');setBusy(true);try{await act(()=>api.patch(`/users/${account._id}/pin`,{pin}),'Guard PIN saved');onSaved();}catch{}finally{setBusy(false);}}}>
+    <p>Set a 6-digit PIN for <strong>{account.name}</strong>. This restricts the account to Gate Scanner and signs out existing sessions. Give the PIN privately to the guard.</p>
+    <Field label="New 6-digit PIN"><input name="pin" type="password" inputMode="numeric" pattern="[0-9]{6}" minLength={6} maxLength={6} autoComplete="new-password" required/></Field>
+    <button className="button primary" disabled={busy}>{busy?'Saving…':'Save PIN'}</button>
+  </form>;
+}
+
 function PasswordForm({account,onSaved}) {
   const [busy,setBusy]=useState(false);
   const submit=async event=>{
@@ -63,11 +72,12 @@ function AccessForm({account,actor,onSaved}) {
   </form>;
 }
 export default function Users(){
-  const query=useData('/users'),{user}=useAuth(),[editing,setEditing]=useState(null),[passwordTarget,setPasswordTarget]=useState(null);
+  const query=useData('/users'),{user}=useAuth(),[editing,setEditing]=useState(null),[passwordTarget,setPasswordTarget]=useState(null),[pinTarget,setPinTarget]=useState(null);
   const editable=u=>u._id!==user._id&&u.role!=='SUPER_ADMIN'&&(user.role==='SUPER_ADMIN'||u.role!=='ADMIN');
   return <><PageTitle title="Users & access" description="Assign staff roles, gates and module permissions."><button className="button primary" onClick={()=>setEditing({})}><Plus size={17}/> Add staff account</button></PageTitle>
-    <section className="card table-card"><DataState query={query}>{query.data?.items.length?<Table headers={['STAFF MEMBER','EMPLOYEE ID','ROLE / GATE','PERMISSIONS','STATUS','ACTIONS']}>{query.data.items.map(u=><tr key={u._id}><td><div className="person"><Avatar name={u.name}/><div><strong>{u.name}</strong><small>{u.email}</small></div></div></td><td>{u.employeeId}</td><td><Badge value={u.role}/><small>{assignedGateFor(u)||'All gates'}</small></td><td>{isAdmin(u)?'Full control':`${permissionsFor(u).length} allowed actions`}</td><td><Badge value={u.active?'ACTIVE':'INACTIVE'}/></td><td><div className="actions">{editable(u)&&<><button className="text-link" onClick={()=>setEditing(u)}>Edit access</button><button className="text-link" onClick={async()=>{try{await act(()=>api.patch(`/users/${u._id}`,{active:!u.active}));query.reload();}catch{}}}>{u.active?'Disable':'Enable'}</button><button className="text-link" onClick={()=>setPasswordTarget(u)}>Set password</button></>}</div></td></tr>)}</Table>:<Empty/>}</DataState></section>
+    <section className="card table-card"><DataState query={query}>{query.data?.items.length?<Table headers={['STAFF MEMBER','EMPLOYEE ID','ROLE / GATE','PERMISSIONS','STATUS','ACTIONS']}>{query.data.items.map(u=><tr key={u._id}><td><div className="person"><Avatar name={u.name}/><div><strong>{u.name}</strong><small>{u.email}</small></div></div></td><td>{u.employeeId}</td><td><Badge value={u.role}/><small>{assignedGateFor(u)||'All gates'}</small></td><td>{isAdmin(u)?'Full control':`${permissionsFor(u).length} allowed actions`}</td><td><Badge value={u.active?'ACTIVE':'INACTIVE'}/></td><td><div className="actions">{editable(u)&&<><button className="text-link" onClick={()=>setEditing(u)}>Edit access</button><button className="text-link" onClick={async()=>{try{await act(()=>api.patch(`/users/${u._id}`,{active:!u.active}));query.reload();}catch{}}}>{u.active?'Disable':'Enable'}</button><button className="text-link" onClick={()=>setPasswordTarget(u)}>Set password</button>{u.role==='SECURITY_GUARD'&&<button className="text-link" onClick={()=>setPinTarget(u)}>{u.scannerOnly?'Change PIN':'Set PIN'}</button>}</>}</div></td></tr>)}</Table>:<Empty/>}</DataState></section>
     {editing&&<Modal title={editing._id?`Edit access · ${editing.name}`:'Add staff account'} onClose={()=>setEditing(null)}><AccessForm account={editing} actor={user} onSaved={()=>{setEditing(null);query.reload();}}/></Modal>}
+    {pinTarget&&<Modal title={`Set guard PIN · ${pinTarget.name}`} onClose={()=>setPinTarget(null)}><PinForm account={pinTarget} onSaved={()=>{setPinTarget(null);query.reload();}}/></Modal>}
     {passwordTarget&&<Modal title={`Set password · ${passwordTarget.name}`} onClose={()=>setPasswordTarget(null)}><PasswordForm account={passwordTarget} onSaved={()=>setPasswordTarget(null)}/></Modal>}
   </>;
 }

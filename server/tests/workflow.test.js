@@ -128,7 +128,7 @@ test('admin can reject or cancel a pending pass with an audited reason',async()=
  assert.equal((await GatePass.findById(cancelled._id)).status,'CANCELLED');
  assert.ok(await GateEvent.exists({gatePassId:cancelled._id,eventType:'PASS_CANCELLED'}));
 });
-test('admin permanently deletes pass and linked OTP/notifications while retaining events and daily limit',async()=>{
+test('admin archives and restores a deleted pass with original status, expiry and daily limit',async()=>{
  const localStudent=await Student.create({name:'Delete Pass Student',admissionNumber:'DELETE-PASS-001',className:'VIII',section:'A',primaryMobile:'+919876540095'});
  const pass=await create(admin,{...input(),student:String(localStudent._id)});
  await OTPVerification.create({gatePass:pass._id,studentId:localStudent._id,mobileNumber:localStudent.primaryMobile,hashedOTP:await bcrypt.hash('123456',4),purpose:'GATE_PASS_APPROVAL',expiresAt:new Date(Date.now()+60000)});
@@ -143,6 +143,45 @@ test('admin permanently deletes pass and linked OTP/notifications while retainin
  assert.ok(await GateEvent.exists({gatePassId:pass._id,eventType:'PASS_CREATED'}));
  assert.ok(await AuditLog.exists({entityId:pass._id,action:'GATE_PASS_DELETED'}));
  assert.equal((await api('post','/gatepasses',admin).send({...input(),student:String(localStudent._id),requestedExit:pass.timing.requestedExit,expectedReturn:pass.timing.expectedReturn})).status,409);
+ assert.ok(await models.DeletedGatePass.exists({originalId:pass._id}));
+ assert.equal((await api('get','/gatepasses?deleted=true',teacher)).status,403);
+ const trash=await api('get',`/gatepasses?deleted=true&q=${pass.gatePassNumber}`);
+ assert.equal(trash.status,200);
+ assert.equal(trash.body.data.items[0].student.admissionNumber,localStudent.admissionNumber);
+ assert.equal((await api('get',`/gatepasses?q=${pass.gatePassNumber}`)).body.data.total,0);
+ assert.equal((await api('get',`/gatepasses/${pass._id}`)).status,404);
+ assert.equal((await api('post',`/gatepasses/${pass._id}/restore`,teacher)).status,403);
+ const restored=await api('post',`/gatepasses/${pass._id}/restore`);
+ assert.equal(restored.status,200,JSON.stringify(restored.body));
+ assert.equal(restored.body.data.gatePassNumber,pass.gatePassNumber);
+ assert.equal(restored.body.data.status,pass.status);
+ assert.equal(restored.body.data.expiresAt,pass.expiresAt);
+ assert.equal(await models.DeletedGatePass.countDocuments({originalId:pass._id}),0);
+ assert.ok(await AuditLog.exists({entityId:pass._id,action:'GATE_PASS_RESTORED'}));
+ assert.equal((await api('post',`/gatepasses/${pass._id}/restore`)).status,404);
+ // Conflicting replacements must leave the archived pass recoverable.
+ assert.equal((await api('delete',`/gatepasses/${pass._id}`)).status,200);
+ const replacement=await GatePass.create({student:localStudent._id,passDate:pass.passDate,gatePassNumber:'RESTORE-CONFLICT'});
+ assert.equal((await api('post',`/gatepasses/${pass._id}/restore`)).status,409);
+ assert.ok(await models.DeletedGatePass.exists({originalId:pass._id}));
+ await replacement.deleteOne();
+ assert.equal((await api('post',`/gatepasses/${pass._id}/restore`)).status,200);
+
+});
+test('deleted QR is disabled and restoring a used pass does not allow a second exit',async()=>{
+ const pass=await approvedForScanner();
+ const scan=()=>api('post','/gatepasses/scan',guard).send({token:qrToken(pass),gate:'Main Gate'});
+ assert.equal((await api('delete',`/gatepasses/${pass._id}`)).status,200);
+ assert.notEqual((await scan()).status,200);
+ assert.equal((await api('post',`/gatepasses/${pass._id}/restore`)).status,200);
+ assert.equal((await scan()).status,200);
+ const exited=await GatePass.findById(pass._id);
+ assert.equal((await api('delete',`/gatepasses/${pass._id}`)).status,200);
+ const restored=await api('post',`/gatepasses/${pass._id}/restore`);
+ assert.equal(restored.status,200);
+ assert.equal(restored.body.data.status,exited.status);
+ assert.equal(restored.body.data.timing.actualExit,exited.timing.actualExit.toISOString());
+ assert.equal((await scan()).status,409);
 });
 test('teacher ownership, mandatory parent verification, and emergency restrictions',async()=>{
  const p=await create();assert.equal(p.status,'PARENT_VERIFICATION_PENDING');
@@ -1051,3 +1090,29 @@ test('a staff member or teacher can only have one gate pass generated per day',a
  assert.equal(found.hasPassToday,true);
 });
 
+
+test('guard PIN login restricts access, rotates credentials and rejects disabled guards',async()=>{
+ const u=await User.create({name:'PIN Guard',email:'pin-guard@school.test',employeeId:'PIN-GUARD',passwordHash:await bcrypt.hash('LongPassword123!',4),role:'SECURITY_GUARD',permissions:['reports.view','students.view']});
+ const endpoint=`/users/${u._id}/pin`;
+ assert.equal((await api('patch',endpoint,teacher).send({pin:'086421'})).status,403);
+ assert.equal((await api('patch',endpoint).send({pin:'123'})).status,400);
+ assert.equal((await api('patch',endpoint).send({pin:'086421'})).status,200);
+ const login=pin=>request(app).post('/api/auth/guard-pin').set('X-Forwarded-For',`192.0.2.${testClient}`).send({pin});
+ assert.equal((await login('000000')).status,401);
+ const signed=await login('086421');
+ assert.equal(signed.status,200);
+ assert.deepEqual(signed.body.data.user.permissions,['gate.verify','gate.move']);
+ assert.equal(signed.body.data.user.scannerOnly,true);
+ const access=signed.body.data.accessToken;
+ assert.equal((await request(app).get('/api/students').set('Authorization',`Bearer ${access}`)).status,403);
+ assert.equal((await request(app).get('/api/users').set('Authorization',`Bearer ${access}`)).status,403);
+ const refresh=await request(app).post('/api/auth/refresh').set('Cookie',signed.headers['set-cookie']);
+ assert.equal(refresh.status,200);
+ assert.equal(refresh.body.data.user.scannerOnly,true);
+ assert.equal((await api('patch',endpoint).send({pin:'086422'})).status,200);
+ assert.equal((await request(app).get('/api/auth/me').set('Authorization',`Bearer ${refresh.body.data.accessToken}`)).status,401);
+ assert.equal((await login('086421')).status,401);
+ assert.equal((await login('086422')).status,200);
+ await User.updateOne({_id:u._id},{active:false});
+ assert.equal((await login('086422')).status,401);
+});

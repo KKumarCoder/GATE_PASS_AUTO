@@ -140,3 +140,15 @@ Complete source code is in `client/src/` and `server/`. All API responses use `{
 Configure the real school database, domain, WhatsApp provider, staff accounts, gates and student register. Test the actual provider contract and approved Meta templates, camera permissions on the school's guard devices, print output, backup restoration and staff procedures in staging. This workspace includes deployable code and deployment files; it has not been deployed to a VPS or connected to a live school messaging account.
 
 Browser checks use an isolated database and headless Chrome (installed Google Chrome on macOS; run `npx playwright install chromium` on Linux). Screenshots are saved locally under `artifacts/` and excluded from Git.
+
+### Restore accidentally deleted gate passes
+
+Administrators can open **Gate passes → Deleted passes → Restore pass**. Deletion archives the original pass outside the active collection, disables its QR while deleted, and retains audit and gate-event history. Restoration preserves its number, approvals, expiry and recorded exits; it does not grant another exit or extend validity. Pending parent verification requires a fresh OTP or approval link. Daily reservations remain in place, and conflicting passes prevent restoration. Only users with `passes.approve` can list or restore deleted passes.
+
+Deploy both the server and client and run `npm run migrate -w server` to create the archive indexes. Passes permanently deleted before this feature was deployed cannot be restored through this screen; they require a pre-deletion database backup.
+
+### Guard PIN login
+
+In **Users & access**, choose **Set PIN** for a Security Guard and save a unique six-digit PIN (leading zeroes are supported). Give it privately to the guard. On the login screen, choose **गार्ड लॉगिन · Guard PIN** and enter the PIN to open Gate Scanner without an email or password.
+
+Enabling PIN login restricts that guard account to scanner verification and movement at its assigned gate, including password-based sessions. PIN changes revoke existing sessions; disabling the account blocks login. Changing the account to another role clears its PIN. PINs use a keyed lookup and bcrypt hash; failed attempts are rate limited per IP and across the school. A school-wide limit of 30 PIN attempts per 15-minute window also counts successful logins. PINs must be reset if the JWT access secret changes.

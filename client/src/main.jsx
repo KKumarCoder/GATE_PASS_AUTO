@@ -42,6 +42,7 @@ function Protected({ permission, children }) {
   if (loading) return <Loading />;
   if (!user)
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  if (user.scannerOnly && location.pathname !== "/gate/scanner") return <Navigate to="/gate/scanner" replace />;
   if (permission && !can(user,permission))
     return <Navigate to={home(user)} replace />;
   return children;

@@ -9,6 +9,7 @@ import { User, Session, RateBucket } from '../models/index.js';
 import { authenticate, permit } from '../middleware/auth.js';
 import { validate, objectId } from '../validators/index.js';
 import { wrap, assert, hash, token, ok, audit, transaction } from '../utils/core.js';
+import { guardPinLookup } from '../utils/guard-pin.js';
 const router = Router();
 const limit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false, message: { success: false, message: 'Too many attempts. Try again in 15 minutes.', data: {} } });
 const refreshLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 120, standardHeaders: 'draft-7', legacyHeaders: false, message: { success: false, message: 'Too many session refreshes. Please wait.', data: {} } });
@@ -18,7 +19,7 @@ async function issue(user, res, session) {
   const refresh = jwt.sign({ jti: token(), version: user.sessionVersion }, env.refresh, { subject: String(user._id), expiresIn: '7d', issuer: 'srps', audience: 'srps-refresh', algorithm: 'HS256' });
   const [loginSession] = await Session.create([{ user: user._id, tokenHash: hash(refresh), expiresAt: new Date(Date.now() + 7 * 86400000) }], { session });
   res.cookie('srps_refresh', refresh, cookieOptions);
-  return { accessToken: accessFor(user, String(loginSession._id)), user: { _id: user._id, name: user.name, role: user.role, email: user.email, employeeId: user.employeeId, permissions: permissionsFor(user), assignedGate: assignedGateFor(user) } };
+  return { accessToken: accessFor(user, String(loginSession._id)), user: { _id: user._id, name: user.name, role: user.role, email: user.email, scannerOnly: user.scannerOnly, employeeId: user.employeeId, permissions: permissionsFor(user), assignedGate: assignedGateFor(user) } };
 }
 router.post('/login', limit, validate(z.object({ identifier: z.string().trim().min(1).max(200), password: z.string().min(1).max(128) }).strict()), wrap(async (req, res) => {
   const window=Math.floor(Date.now()/900000);
@@ -28,6 +29,17 @@ router.post('/login', limit, validate(z.object({ identifier: z.string().trim().m
   await audit(req, valid && user ? 'LOGIN_SUCCESS' : 'LOGIN_FAILED', user?._id);
   assert(valid && user, 401, 'Invalid credentials.');
   ok(res, await issue(user, res));
+}));
+router.post('/guard-pin', limit, validate(z.object({ pin: z.string().regex(/^\d{6}$/) }).strict()), wrap(async (req, res) => {
+  const window = Math.floor(Date.now()/900000);
+  try {
+    await RateBucket.findOneAndUpdate({key:`guard-pin:global:${window}`,count:{$lt:30}},{$inc:{count:1},$set:{expiresAt:new Date((window+2)*900000)}},{upsert:true});
+  } catch(e) { if(e.code===11000) assert(false,429,'Too many PIN attempts. Try again in 15 minutes.'); throw e; }
+  const user = await User.findOne({guardPinLookup:guardPinLookup(req.body.pin),role:'SECURITY_GUARD',scannerOnly:true,active:true}).select('+guardPinHash');
+  const valid = await bcrypt.compare(req.body.pin, user?.guardPinHash || '$2b$12$R9h/cIPz0gi.URNNX3kh2OPST9/PgBkqquzi.Ss7KIUgO2t0jWMUW');
+  await audit(req, valid && user ? 'GUARD_PIN_LOGIN_SUCCESS' : 'GUARD_PIN_LOGIN_FAILED', user?._id);
+  assert(valid && user,401,'Invalid PIN or inactive guard account.');
+  ok(res,await issue(user,res));
 }));
 router.post('/refresh', refreshLimit, wrap(async (req, res) => {
   const raw = req.cookies.srps_refresh; assert(raw, 401, 'Please sign in.');
@@ -44,7 +56,7 @@ router.post('/logout', wrap(async (req, res) => {
   if (req.cookies.srps_refresh) await Session.deleteOne({ tokenHash: hash(req.cookies.srps_refresh) });
   res.clearCookie('srps_refresh', cookieOptions); ok(res);
 }));
-router.get('/me', authenticate, (req, res) => ok(res, { _id: req.user._id, name: req.user.name, role: req.user.role, email: req.user.email, permissions: permissionsFor(req.user), assignedGate: assignedGateFor(req.user) }));
+router.get('/me', authenticate, (req, res) => ok(res, { _id: req.user._id, name: req.user.name, role: req.user.role, email: req.user.email, scannerOnly: req.user.scannerOnly, permissions: permissionsFor(req.user), assignedGate: assignedGateFor(req.user) }));
 // Recovery is initiated by an authenticated super administrator after offline identity verification.
 router.post('/recovery/:id', authenticate, permit('SUPER_ADMIN'), wrap(async (req, res) => {
   objectId.parse(req.params.id); const recovery = token();
