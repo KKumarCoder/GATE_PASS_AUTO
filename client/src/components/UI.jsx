@@ -155,10 +155,11 @@ export function Field({ label, error, children }) {
   );
 }
 export function Pager({ page, total, limit = 30, onChange }) {
+  const totalPages = Math.max(1, Math.ceil((total || 0) / limit));
   return (
     <div className="pager">
       <span>
-        {total || 0} records · Page {page}
+        {total || 0} records · Page {page} of {totalPages}
       </span>
       <div>
         <button
@@ -171,7 +172,7 @@ export function Pager({ page, total, limit = 30, onChange }) {
         </button>
         <button
           className="icon-button"
-          disabled={page * limit >= total}
+          disabled={page >= totalPages}
           onClick={() => onChange(page + 1)}
           aria-label="Next page"
         >

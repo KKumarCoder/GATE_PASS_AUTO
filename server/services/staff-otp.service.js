@@ -1,12 +1,12 @@
 import crypto from 'node:crypto';
 import bcrypt from 'bcrypt';
 import {StaffMember,User,StaffOTP} from '../models/index.js';
-import {admins} from '../middleware/auth.js';
+import {admins,can} from '../middleware/auth.js';
 import {assert,hash} from '../utils/core.js';
 import {sendApitxtOTP} from './otp/apitxt.service.js';
 import {sendEmailMessage} from './email.service.js';
 export async function staffContext(req,body){
- assert(admins.includes(req.user.role)||body.staff===String(req.user._id),403,'You can request movement only for yourself.');
+ assert(admins.includes(req.user.role)||can(req.user,'staff.manage')||body.staff===String(req.user._id),403,'You can request movement only for yourself.');
  const person=await User.findOne({_id:body.staff,active:true})||await StaffMember.findOne({_id:body.staff,active:true,deletedAt:null});
  assert(person,404,'Active staff member not found.');
  return {person,fingerprint:hash(JSON.stringify([body.staff,body.department,body.reason,body.expectedReturn||null,person.mobile||'',person.email||'']))};

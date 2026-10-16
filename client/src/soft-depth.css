@@ -115,4 +115,215 @@ body:has(.public-page){background:var(--depth-surface)}
 .app-shell .button.status-activate{background:#157347;color:#fff;border-color:#157347}
 .app-shell .button.status-deactivate:not(:disabled):hover{background:#961c2c}
 .app-shell .button.status-activate:not(:disabled):hover{background:#105c38}
+
+.app-shell table td .actions,
+.app-shell .actions.staff-row-actions,
+.app-shell .actions.student-row-actions {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  gap: 6px !important;
+  white-space: nowrap !important;
+  width: max-content !important;
 }
+
+.app-shell table th:last-child,
+.app-shell table td:last-child {
+  white-space: nowrap !important;
+  min-width: 175px !important;
+  width: 1% !important;
+}
+
+.app-shell table .actions .icon-button {
+  flex-shrink: 0 !important;
+}
+
+.app-shell .actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-shell .icon-button.action-btn-icon {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: 1px solid var(--depth-light);
+  background: var(--depth-surface);
+  box-shadow: 3px 3px 8px var(--depth-shadow), -3px -3px 8px var(--depth-light);
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .18s ease, background .18s ease, color .18s ease;
+}
+
+.app-shell .icon-button.action-btn-icon:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none !important;
+}
+
+/* Action: Create gate pass */
+.app-shell .icon-button.action-btn-create {
+  color: #0284c7;
+}
+.app-shell .icon-button.action-btn-create:not(:disabled):hover {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0284c7;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.35);
+  transform: translateY(-2px);
+}
+
+/* Action: Edit / Photo */
+.app-shell .icon-button.action-btn-edit {
+  color: var(--depth-ink);
+}
+.app-shell .icon-button.action-btn-edit:not(:disabled):hover {
+  background: #475569;
+  color: #ffffff;
+  border-color: #475569;
+  box-shadow: 0 4px 12px rgba(71, 85, 105, 0.3);
+  transform: translateY(-2px);
+}
+
+/* Action: Deactivate */
+.app-shell .icon-button.action-btn-deactivate {
+  color: #dc2626;
+}
+.app-shell .icon-button.action-btn-deactivate:not(:disabled):hover {
+  background: #dc2626;
+  color: #ffffff;
+  border-color: #dc2626;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.35);
+  transform: translateY(-2px);
+}
+
+/* Action: Activate */
+.app-shell .icon-button.action-btn-activate {
+  color: #16a34a;
+}
+.app-shell .icon-button.action-btn-activate:not(:disabled):hover {
+  background: #16a34a;
+  color: #ffffff;
+  border-color: #16a34a;
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.35);
+  transform: translateY(-2px);
+}
+
+/* Action: Delete */
+.app-shell .icon-button.action-btn-delete {
+  color: #b91c1c;
+}
+.app-shell .icon-button.action-btn-delete:not(:disabled):hover {
+  background: #b91c1c;
+  color: #ffffff;
+  border-color: #b91c1c;
+  box-shadow: 0 4px 12px rgba(185, 28, 28, 0.35);
+  transform: translateY(-2px);
+}
+
+/* Staff Page Top Action Buttons */
+.app-shell .staff-page-topbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.app-shell .icon-button.top-action-btn {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  border: 1px solid var(--depth-light);
+  background: var(--depth-surface);
+  box-shadow: 4px 4px 10px var(--depth-shadow), -4px -4px 10px var(--depth-light);
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .18s ease, background .18s ease, color .18s ease;
+}
+
+.app-shell .icon-button.top-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none !important;
+}
+
+/* Top button: Create gate pass (Cyan / Blue) */
+.app-shell .icon-button.top-btn-pass {
+  color: #0284c7;
+}
+.app-shell .icon-button.top-btn-pass:not(:disabled):hover {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0284c7;
+  box-shadow: 0 6px 16px rgba(2, 132, 199, 0.4);
+  transform: translateY(-2px);
+}
+
+/* Top button: Sync bus staff (Amber / Gold) */
+.app-shell .icon-button.top-btn-sync {
+  color: #d97706;
+}
+.app-shell .icon-button.top-btn-sync:not(:disabled):hover {
+  background: #d97706;
+  color: #ffffff;
+  border-color: #d97706;
+  box-shadow: 0 6px 16px rgba(217, 119, 6, 0.4);
+  transform: translateY(-2px);
+}
+
+/* Top button: Add new staff (Emerald Green) */
+.app-shell .icon-button.top-btn-add {
+  color: #16a34a;
+}
+.app-shell .icon-button.top-btn-add:not(:disabled):hover {
+  background: #16a34a;
+  color: #ffffff;
+  border-color: #16a34a;
+  box-shadow: 0 6px 16px rgba(22, 163, 74, 0.4);
+  transform: translateY(-2px);
+}
+
+/* Dark mode overrides for top buttons */
+[data-theme='dark'] .app-shell .icon-button.top-btn-pass {
+  background: #082f49;
+  color: #38bdf8;
+  border-color: #0c4a6e;
+}
+[data-theme='dark'] .app-shell .icon-button.top-btn-pass:not(:disabled):hover {
+  background: #0284c7;
+  color: #ffffff;
+}
+
+[data-theme='dark'] .app-shell .icon-button.top-btn-sync {
+  background: #451a03;
+  color: #fbbf24;
+  border-color: #78350f;
+}
+[data-theme='dark'] .app-shell .icon-button.top-btn-sync:not(:disabled):hover {
+  background: #d97706;
+  color: #ffffff;
+}
+
+[data-theme='dark'] .app-shell .icon-button.top-btn-add {
+  background: #052e16;
+  color: #4ade80;
+  border-color: #14532d;
+}
+[data-theme='dark'] .app-shell .icon-button.top-btn-add:not(:disabled):hover {
+  background: #16a34a;
+  color: #ffffff;
+}
+}
+
+

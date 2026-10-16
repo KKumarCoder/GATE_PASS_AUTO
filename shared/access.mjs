@@ -7,6 +7,7 @@ export const permissionLabels = {
   'passes.create': 'Create, verify parents, share and cancel passes',
   'passes.approve': 'Approve or reject student passes',
   'passes.emergency': 'Create emergency passes',
+  'passes.pending': 'View dedicated pending requests queue',
   'gate.verify': 'Verify QR / pass number',
   'gate.move': 'Record student exit / return',
   'students.view': 'View student directory',
@@ -16,19 +17,21 @@ export const permissionLabels = {
   'visitors.move': 'Record visitor entry / exit',
   'staff.view': 'View own staff movement requests',
   'staff.request': 'Request own staff movement',
+  'staff.manage': 'Create and manage movement for all staff',
   'staff.approve': 'View and approve staff movement',
   'staff.move': 'View and record staff exit / return',
   'logs.view': 'View gate logs',
   'audit.view': 'View audit history',
   'reports.view': 'Dashboard, outside students and reports',
   'notifications.view': 'View notification delivery history',
-  'settings.manage': 'Manage school settings and bus staff',
+  'settings.manage': 'Manage school settings and system configuration',
+  'bus-staff.view': 'View and manage bus staff directory',
 };
 export const permissionKeys = Object.keys(permissionLabels);
 export const roleDefaults = {
   SUPER_ADMIN: permissionKeys,
   ADMIN: permissionKeys,
-  PRINCIPAL: ['bus-swaps.view','bus-swaps.create','bus-swaps.approve','passes.view','passes.create','passes.approve','students.view'],
+  PRINCIPAL: ['bus-swaps.view','bus-swaps.create','bus-swaps.approve','passes.view','passes.create','passes.approve','passes.pending','students.view'],
   TEACHER: ['bus-swaps.view','bus-swaps.create','passes.view','passes.create','students.view','staff.view','staff.request'],
   RECEPTION: ['bus-swaps.view','bus-swaps.create','passes.view','passes.create','students.view','visitors.view','visitors.create','staff.view','staff.request'],
   SECURITY_GUARD: ['bus-swaps.view','gate.verify','gate.move'],
@@ -36,22 +39,32 @@ export const roleDefaults = {
 export const dependencies = {
   'bus-swaps.create':['bus-swaps.view','students.view'], 'bus-swaps.approve':['bus-swaps.view'],
   'passes.create':['passes.view','students.view'], 'passes.approve':['passes.view'],
-  'passes.emergency':['passes.create'], 'gate.move':['gate.verify'],
+  'passes.emergency':['passes.create'], 'passes.pending':['passes.view'], 'gate.move':['gate.verify'],
   'students.manage':['students.view'], 'visitors.create':['visitors.view'],
   'visitors.move':['visitors.view','gate.verify'], 'staff.request':['staff.view'],
+  'staff.manage':['staff.view','staff.request'],
   'staff.approve':['staff.view'], 'staff.move':['staff.view'], 'audit.view':['logs.view'],
-  'reports.view':['passes.view','students.view'],
+  'reports.view':['passes.view','students.view'], 'settings.manage':['bus-staff.view'],
 };
 export const isAdmin = user => ['SUPER_ADMIN','ADMIN'].includes(user?.role);
 export const permissionsFor = user => {
   if (user?.scannerOnly && user?.role === 'SECURITY_GUARD') return ['gate.verify','gate.move'];
-  if (isAdmin(user)) return permissionKeys;
+  if (isAdmin(user)) return user?.permissions && user.permissions.length > 0 ? user.permissions : permissionKeys;
   const permissions = user?.permissions ?? roleDefaults[user?.role] ?? [];
   return user?.role === 'SECURITY_GUARD'
     ? [...new Set([...roleDefaults.SECURITY_GUARD, ...permissions])]
     : permissions;
 };
-export const can = (user, permission) => permission === 'users.manage' ? isAdmin(user) : permissionsFor(user).includes(permission);
+export const can = (user, permission) => {
+  if (user?.role === 'SUPER_ADMIN') return true;
+  if (permission === 'users.manage') {
+    if (!isAdmin(user)) return false;
+    if (!user?.permissions || user.permissions.length === 0) return true;
+    if (user.permissions.length >= permissionKeys.length) return true;
+    return user.permissions.includes('users.manage');
+  }
+  return permissionsFor(user).includes(permission);
+};
 export function withDependencies(values) {
   const result = new Set(values);
   for (const key of result) for (const dependency of dependencies[key] || []) result.add(dependency);
@@ -66,6 +79,18 @@ export function togglePermission(values,key,enabled) {
 export const assignedGateFor = user => user?.assignedGate || (user?.role === 'SECURITY_GUARD' ? 'Main Gate' : '');
 export const homeFor = user => {
   if (user?.scannerOnly) return '/gate/scanner';
-  const choices = [['reports.view','/'],['passes.view','/gatepasses'],['gate.verify','/guard'],['bus-swaps.view','/bus-swaps'],['students.view','/students'],['visitors.view','/visitors'],['staff.view','/staff'],['logs.view','/logs'],['notifications.view','/notifications'],['settings.manage','/settings']];
+  const choices = [
+    ['reports.view','/'],
+    ['passes.view','/gatepasses'],
+    ['gate.verify','/guard'],
+    ['bus-swaps.view','/bus-swaps'],
+    ['students.view','/students'],
+    ['visitors.view','/visitors'],
+    ['staff.view','/staff'],
+    ['bus-staff.view','/bus-staff'],
+    ['logs.view','/logs'],
+    ['notifications.view','/notifications'],
+    ['settings.manage','/settings']
+  ];
   return choices.find(([key])=>can(user,key))?.[1] || '/no-access';
 };

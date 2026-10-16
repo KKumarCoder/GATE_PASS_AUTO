@@ -89,11 +89,11 @@ export default function GatePassPrint() {
         <section className="thermal-qr-section">
           {qr?<img ref={qrImage} src={qr} alt="Secure Gate Pass QR code" onLoad={()=>{setQrReady(true);setQrError('');}} onError={()=>{setQrReady(false);setQrError('Unable to load the Gate Pass QR code. Reload and try again.');}}/>:<div className="thermal-qr-placeholder">{pass.qr?.generatedAt?'PREPARING SECURE QR CODE':'QR CODE AVAILABLE AFTER APPROVAL'}</div>}
         </section>
-        <footer className="thermal-pass-id">
+        <div className="thermal-pass-id">
           <span>GATE PASS ID</span>
           <strong>{displayed(pass.gatePassNumber)}</strong>
           <small>Please present this pass at the school gate.</small>
-        </footer>
+        </div>
       </article>
     </>}
   </main>;

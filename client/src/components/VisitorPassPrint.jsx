@@ -55,7 +55,7 @@ export default function VisitorPassPrint({pass,image,schoolName,onClose,kind='vi
         {[['Purpose',pass.purpose],['Meeting',pass.personToMeet],['Department',pass.department],['Expected exit',exit],['Status',String(pass.status||'').replaceAll('_',' ')]].filter(([,value])=>value).map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
       </dl>}
       {qrSrc&&<section className="thermal-qr-section"><img ref={qr} src={qrSrc} alt={staff?'Staff gate pass QR':'Visitor verification QR'} onLoad={()=>{setReady(true);setError('');}} onError={()=>{setReady(false);setError('QR could not load. Reopen the pass to try again.');}}/></section>}
-      <footer className="thermal-pass-id"><span>{staff?'STAFF GATE PASS ID':'VISITOR PASS ID'}</span><strong>{pass.passNumber}</strong><small>{staff?(pass.status==='REQUESTED'?'Pending administrator approval. This receipt does not authorize exit.':'Present and scan this QR at the school gate for exit.'):'Please present this pass at the school gate.'}</small></footer>
+      <div className="thermal-pass-id"><span>{staff?'STAFF GATE PASS ID':'VISITOR PASS ID'}</span><strong>{pass.passNumber}</strong><small>{staff?(pass.status==='REQUESTED'?'Pending administrator approval. This receipt does not authorize exit.':'Present and scan this QR at the school gate for exit.'):'Please present this pass at the school gate.'}</small></div>
     </article>
   </div>,document.body);
 }

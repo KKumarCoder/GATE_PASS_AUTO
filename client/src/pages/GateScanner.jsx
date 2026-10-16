@@ -66,6 +66,52 @@ function playBeep(success, audioContext) {
   }
 }
 
+function KineticIrisScanner({ state }) {
+  const isVerifying = state === 'VERIFYING';
+
+  return (
+    <div className={`scanner-iris-stage stage-${state.toLowerCase()}`} aria-hidden="true">
+      <div className="scanner-iris-halo" />
+      <div className="scanner-iris-basin">
+        <div className="kinetic-iris-main">
+          {/* Symmetrical capsule tracks with mask-image (9 dual-capsule tracks = 18 slots) */}
+          <div className="kinetic-loaders">
+            {Array.from({ length: 9 }, (_, index) => (
+              <div key={index} className={`kinetic-loader loader-${index}`} />
+            ))}
+          </div>
+          {/* Radial kinetic oscillating spheres (18 balls spanning the entire 360° dial) */}
+          <div className="kinetic-loadersB">
+            {Array.from({ length: 18 }, (_, index) => (
+              <div key={index} className={`kinetic-loaderA loaderA-${index}`}>
+                <div className={`kinetic-ball ball${index}`} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Central Holographic Target Reticle */}
+        <div className="kinetic-center-target">
+          <div className="kinetic-reticle-ring ring-outer" />
+          <div className="kinetic-reticle-ring ring-inner" />
+          <div className="kinetic-laser-sweep" />
+          <div className="kinetic-corner corner-tl" />
+          <div className="kinetic-corner corner-tr" />
+          <div className="kinetic-corner corner-bl" />
+          <div className="kinetic-corner corner-br" />
+          <div className="kinetic-target-core">
+            {isVerifying ? (
+              <AppLoader label="" />
+            ) : (
+              <ScanLine size={32} className="kinetic-scan-icon" strokeWidth={1.8} />
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function GateScanner() {
   const { user, logout } = useAuth();
   const [searchParams] = useSearchParams();
@@ -232,13 +278,33 @@ export default function GateScanner() {
           <div className="scanner-eyebrow"><ShieldCheck size={17}/> GATE PASS VERIFICATION</div>
           <h1>{state === 'VERIFYING' ? 'Verifying Gate Pass' : 'Gate security scanner'}</h1>
           <p className="scanner-intro">{state === 'VERIFYING' ? 'Checking pass status and recording the exit securely.' : 'Scan the QR code on the student’s approved Gate Pass.'}</p>
-          <div className={`scanner-visual ${state === 'VERIFYING' ? 'is-verifying' : ''}`}>
-            {state === 'VERIFYING' ? <AppLoader label="Verifying pass…"/> : <><ScanLine size={88} strokeWidth={1.4}/><span className="scanner-frame scanner-frame-one"/><span className="scanner-frame scanner-frame-two"/></>}
+          <KineticIrisScanner state={state} />
+          <div className={`scanner-ready-pill scanner-ready-${state.toLowerCase()}`} role="status">
+            <span className="scanner-beacon">
+              <span className="scanner-beacon-ping" />
+              <span className="scanner-beacon-dot" />
+            </span>
+            <span className="scanner-ready-label">
+              {state === 'VERIFYING' ? 'VERIFYING PASS…' : state === 'SCANNING' ? 'READING QR CODE…' : 'READY TO SCAN'}
+            </span>
           </div>
-          <div className="scanner-ready-text">{state === 'VERIFYING' ? 'PLEASE WAIT' : state === 'SCANNING' ? 'SCANNING' : 'READY TO SCAN'}</div>
           <p className="scanner-hint">Present the Gate Pass QR to the POSLOW T-6900 scanner.</p>
-          {state !== 'VERIFYING' && <button type="button" className="button secondary" onClick={() => { unlockAudio(audioContext); scannerInput.current?.focus({ preventScroll: true }); }}>Activate scanner</button>}
-          {state !== 'VERIFYING' && <p className="scanner-hint">If the scanner beeps without a result, click Activate scanner and scan again.</p>}
+          {state !== 'VERIFYING' && (
+            <button
+              type="button"
+              className="scanner-activate-btn"
+              onClick={() => {
+                unlockAudio(audioContext);
+                scannerInput.current?.focus({ preventScroll: true });
+              }}
+            >
+              <ScanLine size={18} />
+              <span>Activate scanner</span>
+            </button>
+          )}
+          {state !== 'VERIFYING' && (
+            <p className="scanner-hint scanner-subhint">If the scanner beeps without a result, click Activate scanner and scan again.</p>
+          )}
         </>}
         {inResult && state === 'EXIT_ALLOWED' && <>
           <div className="scanner-result-icon success"><CheckCircle2 size={76}/></div>

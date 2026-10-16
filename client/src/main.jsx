@@ -113,7 +113,7 @@ function App() {
               <Route
                 path="pending"
                 element={
-                  <Protected permission="passes.view">
+                  <Protected permission="passes.pending">
                     <Passes pending />
                   </Protected>
                 }
@@ -170,7 +170,7 @@ function App() {
               />
               <Route
                 path="bus-staff"
-                element={<Protected permission="settings.manage"><BusStaff /></Protected>}
+                element={<Protected permission="bus-staff.view"><BusStaff /></Protected>}
               />
               <Route
                 path="settings"

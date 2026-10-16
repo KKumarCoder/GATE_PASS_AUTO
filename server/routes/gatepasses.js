@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
-import { BusDriver, GateEvent, GatePass, DeletedGatePass, GatePassDailyLock, OTPVerification, Notification, Student, SystemSetting, VisitorPass, StaffPass } from '../models/index.js';
+import { BusDriver, GateEvent, GatePass, DeletedGatePass, GatePassDailyLock, OTPVerification, Notification, Student, SystemSetting, VisitorPass, StaffPass, StaffMember, User } from '../models/index.js';
 import { authenticate, requirePermission, enforceGate, can } from '../middleware/auth.js';
 import { validate, passSchema, objectId, text, pageNumber } from '../validators/index.js';
 import { wrap, ok, assert, transaction, number, event, audit, token, hash, escapeRegex } from '../utils/core.js';
@@ -61,11 +61,11 @@ function scannerDenial(res,status,message,eventType){
   return res.status(status).json({success:false,status:'EXIT_DENIED',reason:eventType,message,data:{}});
 }
 router.get('/',requirePermission('passes.view'),wrap(async(req,res)=>{
+  const type=String(req.query.type||'student').toLowerCase();
   const deleted=req.query.deleted==='true';
   assert(!deleted||can(req.user,'passes.approve'),403,'Only administrators can view deleted passes.');
   const query={...scoped(req)};
   if(req.query.status) query.status=String(req.query.status);
-  if(req.query.q) query.gatePassNumber={$regex:escapeRegex(String(req.query.q).slice(0,100)),$options:'i'};
   if(req.query.from||req.query.to){
     query['timing.requestedExit']={};
     for(const key of ['from','to'])if(req.query[key]){
@@ -79,16 +79,105 @@ router.get('/',requirePermission('passes.view'),wrap(async(req,res)=>{
     assert(!query['timing.requestedExit'].$gte||!query['timing.requestedExit'].$lt||query['timing.requestedExit'].$gte<query['timing.requestedExit'].$lt,400,'From date must not be after to date.');
   }
   const page=pageNumber.parse(req.query.page), limit=z.coerce.number().int().min(5).max(100).default(30).parse(req.query.limit);
+
+  if(type==='staff'){
+    const staffQuery=can(req.user,'staff.approve')||can(req.user,'staff.move')?{}:{staff:req.user._id};
+    if(req.query.status){
+      const validStatuses=['REQUESTED','APPROVED','EXITED','RETURNED'];
+      if(validStatuses.includes(req.query.status)) staffQuery.status=req.query.status;
+      else staffQuery._id=null;
+    }
+    if(req.query.q){
+      const reg={$regex:escapeRegex(String(req.query.q).slice(0,100)),$options:'i'};
+      const [members,users]=await Promise.all([
+        StaffMember.find({$or:[{name:reg},{employeeId:reg}]}).select('_id'),
+        User.find({$or:[{name:reg},{employeeId:reg}]}).select('_id'),
+      ]);
+      const matchedIds=[...members,...users].map(m=>m._id);
+      staffQuery.$or=[{passNumber:reg},{staff:{$in:matchedIds}},{employeeId:reg}];
+    }
+    if(query['timing.requestedExit']){
+      staffQuery.createdAt={};
+      if(query['timing.requestedExit'].$gte) staffQuery.createdAt.$gte=query['timing.requestedExit'].$gte;
+      if(query['timing.requestedExit'].$lt) staffQuery.createdAt.$lt=query['timing.requestedExit'].$lt;
+    }
+    const [staffRecords,totalStaff]=await Promise.all([
+      StaffPass.find(staffQuery).populate('staff','name employeeId photo active designation staffRole').populate('approvedBy','name').sort({createdAt:-1}).skip((page-1)*limit).limit(limit).lean(),
+      StaffPass.countDocuments(staffQuery)
+    ]);
+    const items=staffRecords.map(p=>({
+      ...p,
+      passType:'STAFF',
+      gatePassNumber:p.passNumber,
+      timing:{requestedExit:p.createdAt,actualExit:p.exitTime,expectedReturn:p.expectedReturn,actualReturn:p.returnTime}
+    }));
+    return ok(res,{items,total:totalStaff,page,limit});
+  }
+
+  if(req.query.q){
+    const reg={$regex:escapeRegex(String(req.query.q).slice(0,100)),$options:'i'};
+    const studentMatches=await Student.find({$or:[{name:reg},{admissionNumber:reg}]}).select('_id');
+    const studentIds=studentMatches.map(s=>s._id);
+    query.$or=[{gatePassNumber:reg},{student:{$in:studentIds}}];
+  }
+
+  if(type==='all' && !deleted){
+    const staffQuery=can(req.user,'staff.approve')||can(req.user,'staff.move')?{}:{staff:req.user._id};
+    if(req.query.status){
+      const validStatuses=['REQUESTED','APPROVED','EXITED','RETURNED'];
+      if(validStatuses.includes(req.query.status)) staffQuery.status=req.query.status;
+      else staffQuery._id=null;
+    }
+    if(req.query.q){
+      const reg={$regex:escapeRegex(String(req.query.q).slice(0,100)),$options:'i'};
+      const [members,users]=await Promise.all([
+        StaffMember.find({$or:[{name:reg},{employeeId:reg}]}).select('_id'),
+        User.find({$or:[{name:reg},{employeeId:reg}]}).select('_id'),
+      ]);
+      const matchedIds=[...members,...users].map(m=>m._id);
+      staffQuery.$or=[{passNumber:reg},{staff:{$in:matchedIds}},{employeeId:reg}];
+    }
+    if(query['timing.requestedExit']){
+      staffQuery.createdAt={};
+      if(query['timing.requestedExit'].$gte) staffQuery.createdAt.$gte=query['timing.requestedExit'].$gte;
+      if(query['timing.requestedExit'].$lt) staffQuery.createdAt.$lt=query['timing.requestedExit'].$lt;
+    }
+
+    const [students,studentTotal,staffRecords,staffTotal]=await Promise.all([
+      GatePass.find(query).populate(populate).sort({createdAt:-1}).limit(page*limit).lean(),
+      GatePass.countDocuments(query),
+      StaffPass.find(staffQuery).populate('staff','name employeeId photo active designation staffRole').populate('approvedBy','name').sort({createdAt:-1}).limit(page*limit).lean(),
+      StaffPass.countDocuments(staffQuery)
+    ]);
+
+    const formattedStudents=students.map(p=>({...p,passType:'STUDENT'}));
+    const formattedStaff=staffRecords.map(p=>({
+      ...p,
+      passType:'STAFF',
+      gatePassNumber:p.passNumber,
+      timing:{requestedExit:p.createdAt,actualExit:p.exitTime,expectedReturn:p.expectedReturn,actualReturn:p.returnTime}
+    }));
+
+    const combined=[...formattedStudents,...formattedStaff].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+    const items=combined.slice((page-1)*limit,page*limit);
+    return ok(res,{items,total:studentTotal+staffTotal,page,limit,studentTotal,staffTotal});
+  }
+
   let items,total;
   if(deleted){
-    const archivedQuery=Object.fromEntries(Object.entries(query).map(([key,value])=>[`pass.${key}`,value]));
+    const { $or: orConds, ...otherFields } = query;
+    const archivedQuery = Object.fromEntries(Object.entries(otherFields).map(([key, value]) => [`pass.${key}`, value]));
+    if (orConds) {
+      archivedQuery.$or = orConds.map(cond => Object.fromEntries(Object.entries(cond).map(([k, v]) => [`pass.${k}`, v])));
+    }
     const records=await DeletedGatePass.find(archivedQuery).sort({deletedAt:-1}).skip((page-1)*limit).limit(limit).lean();
     items=await GatePass.populate(records.map(record=>({...record.pass,deletedAt:record.deletedAt})),populate);
     total=await DeletedGatePass.countDocuments(archivedQuery);
   }else{
     [items,total]=await Promise.all([GatePass.find(query).populate(populate).sort({createdAt:-1}).skip((page-1)*limit).limit(limit),GatePass.countDocuments(query)]);
   }
-  ok(res,{items,total,page,limit});
+  const formattedItems=items.map(p=>({...p.toObject?p.toObject():p,passType:'STUDENT'}));
+  ok(res,{items:formattedItems,total,page,limit});
 }));
 router.post('/scan',requirePermission('gate.move'),validate(z.object({token:z.string().regex(/^[a-fA-F0-9]{64}$/),gate:text.max(60)}).strict()),enforceGate,wrap(async(req,res)=>{
   const settings=await SystemSetting.findOne({key:'school'});

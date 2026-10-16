@@ -33,10 +33,128 @@
 .scanner-kiosk .scanner-panel h1{color:#263b55;line-height:1.15;text-shadow:1px 2px 0 #fff}
 .scanner-kiosk .scanner-eyebrow{color:#14799c;letter-spacing:.13em}
 .scanner-kiosk .scanner-intro,.scanner-kiosk .scanner-hint{color:#526781;line-height:1.6}
-.scanner-kiosk .scanner-visual{width:160px;height:160px;border-radius:35px;color:#168aca;background:var(--scan-surface);border:1px solid #fff;box-shadow:10px 10px 22px var(--scan-shadow),-10px -10px 22px var(--scan-light);transition:translate .3s,box-shadow .3s}
-.scanner-kiosk .scanner-frame{border-color:#20a4b2}
-.scanner-kiosk .scanner-ready-text{color:#157455;font-size:clamp(20px,3vw,25px)}
-.scanner-kiosk .scanner-visual.is-verifying{color:#926300;box-shadow:inset 6px 6px 14px var(--scan-shadow),inset -6px -6px 14px var(--scan-light)}
+/* Kinetic Iris Scanner Stage */
+.scanner-kiosk .scanner-iris-stage{position:relative;margin:28px 0 20px;display:flex;align-items:center;justify-content:center}
+.scanner-kiosk .scanner-iris-halo{position:absolute;width:320px;height:320px;border-radius:50%;background:radial-gradient(circle,rgba(14,165,233,0.16) 0%,rgba(32,174,178,0.06) 45%,transparent 72%);filter:blur(18px);pointer-events:none;transition:background .4s ease,transform .4s ease}
+.scanner-kiosk .stage-verifying .scanner-iris-halo{background:radial-gradient(circle,rgba(245,158,11,0.22) 0%,rgba(217,119,6,0.08) 45%,transparent 72%)}
+.scanner-kiosk .stage-scanning .scanner-iris-halo{background:radial-gradient(circle,rgba(14,165,233,0.3) 0%,rgba(56,189,248,0.14) 45%,transparent 72%);transform:scale(1.08)}
+.scanner-kiosk .stage-exit_allowed .scanner-iris-halo{background:radial-gradient(circle,rgba(34,197,94,0.3) 0%,rgba(16,185,129,0.12) 45%,transparent 72%)}
+.scanner-kiosk .stage-exit_denied .scanner-iris-halo{background:radial-gradient(circle,rgba(239,68,68,0.3) 0%,rgba(220,38,38,0.12) 45%,transparent 72%)}
+
+/* Basin: Soft 3D Neumorphic Dish */
+.scanner-kiosk .scanner-iris-basin{position:relative;width:270px;height:270px;border-radius:50%;background:var(--scan-surface);box-shadow:14px 14px 30px var(--scan-shadow),-14px -14px 30px var(--scan-light),inset 1px 1px 2px #fff;display:flex;align-items:center;justify-content:center;font-size:16px;transition:box-shadow .35s ease}
+
+/* Iris Assembly (Rotating Kinetic Radial System - 360 Loop) */
+.scanner-kiosk .kinetic-iris-main{position:relative;width:13em;height:13em;display:flex;align-items:center;justify-content:center;animation:irisRotate360 28s linear infinite!important;animation-play-state:running!important;will-change:transform}
+.scanner-kiosk .kinetic-loaders,.scanner-kiosk .kinetic-loadersB{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+
+.scanner-kiosk .kinetic-loader{position:absolute;width:1.15em;height:13em;border-radius:50px;background:transparent;transform-origin:center center}
+.scanner-kiosk .kinetic-loader::after{content:"";position:absolute;left:0;top:0;width:1.15em;height:4.8em;background:var(--scan-surface);border-radius:50px;border:1px solid #ffffffd8;box-shadow:inset 4px 4px 10px var(--scan-shadow),inset -4px -4px 10px var(--scan-light);mask-image:linear-gradient(to bottom,black calc(100% - 36px),transparent 100%);-webkit-mask-image:linear-gradient(to bottom,black calc(100% - 36px),transparent 100%)}
+.scanner-kiosk .kinetic-loader::before{content:"";position:absolute;right:0;bottom:0;width:1.15em;height:4.8em;background:var(--scan-surface);border-radius:50px;border:1px solid #ffffffd8;box-shadow:inset 4px 4px 10px var(--scan-shadow),inset -4px -4px 10px var(--scan-light);mask-image:linear-gradient(to top,black calc(100% - 36px),transparent 100%);-webkit-mask-image:linear-gradient(to top,black calc(100% - 36px),transparent 100%)}
+
+.scanner-kiosk .kinetic-loaderA{position:absolute;width:1.15em;height:13em;border-radius:50px;background:transparent;transform-origin:center center}
+
+/* 3D Kinetic Pearl-White Spheres */
+.scanner-kiosk .kinetic-ball{width:1.15em;height:1.15em;border-radius:50%;background:radial-gradient(circle at 35% 32%,#ffffff 0%,#d8e6f3 38%,#8fa9c6 78%,#6d8ba9 100%);box-shadow:inset -2px -2px 5px rgba(22,59,95,0.32),inset 2px 2px 4px rgba(255,255,255,0.98),0 3px 8px rgba(16,37,66,0.16),0 0 14px rgba(14,165,233,0.45);animation:3.24s kineticMove ease-in-out infinite!important;animation-play-state:running!important;will-change:transform;transition:background .3s ease,box-shadow .3s ease}
+.scanner-kiosk .stage-scanning .kinetic-ball{animation-duration:1.98s!important;box-shadow:inset -2px -2px 5px rgba(22,59,95,0.32),inset 2px 2px 4px #fff,0 3px 10px rgba(14,165,233,0.35),0 0 20px rgba(14,165,233,0.85)}
+.scanner-kiosk .stage-verifying .kinetic-ball{animation-duration:2.16s!important;background:radial-gradient(circle at 35% 32%,#ffffff 0%,#fef3c7 40%,#f59e0b 80%,#b45309 100%);box-shadow:inset -2px -2px 5px rgba(146,64,14,0.45),inset 2px 2px 4px #fff,0 3px 10px rgba(217,119,6,0.3),0 0 20px rgba(245,158,11,0.75)}
+
+/* 9 dual-capsule loader tracks (0° to 160° at 20° steps => 18 slots) */
+.scanner-kiosk :is(.loader-0,.kinetic-loader:nth-child(1)){transform:rotate(0deg)}
+.scanner-kiosk :is(.loader-1,.kinetic-loader:nth-child(2)){transform:rotate(20deg)}
+.scanner-kiosk :is(.loader-2,.kinetic-loader:nth-child(3)){transform:rotate(40deg)}
+.scanner-kiosk :is(.loader-3,.kinetic-loader:nth-child(4)){transform:rotate(60deg)}
+.scanner-kiosk :is(.loader-4,.kinetic-loader:nth-child(5)){transform:rotate(80deg)}
+.scanner-kiosk :is(.loader-5,.kinetic-loader:nth-child(6)){transform:rotate(100deg)}
+.scanner-kiosk :is(.loader-6,.kinetic-loader:nth-child(7)){transform:rotate(120deg)}
+.scanner-kiosk :is(.loader-7,.kinetic-loader:nth-child(8)){transform:rotate(140deg)}
+.scanner-kiosk :is(.loader-8,.kinetic-loader:nth-child(9)){transform:rotate(160deg)}
+
+/* 18 loaderA ball arms covering all 360 degrees (0° to 340° at 20° steps) */
+.scanner-kiosk :is(.loaderA-0,.kinetic-loaderA:nth-child(1)){transform:rotate(0deg)}
+.scanner-kiosk :is(.loaderA-1,.kinetic-loaderA:nth-child(2)){transform:rotate(20deg)}
+.scanner-kiosk :is(.loaderA-2,.kinetic-loaderA:nth-child(3)){transform:rotate(40deg)}
+.scanner-kiosk :is(.loaderA-3,.kinetic-loaderA:nth-child(4)){transform:rotate(60deg)}
+.scanner-kiosk :is(.loaderA-4,.kinetic-loaderA:nth-child(5)){transform:rotate(80deg)}
+.scanner-kiosk :is(.loaderA-5,.kinetic-loaderA:nth-child(6)){transform:rotate(100deg)}
+.scanner-kiosk :is(.loaderA-6,.kinetic-loaderA:nth-child(7)){transform:rotate(120deg)}
+.scanner-kiosk :is(.loaderA-7,.kinetic-loaderA:nth-child(8)){transform:rotate(140deg)}
+.scanner-kiosk :is(.loaderA-8,.kinetic-loaderA:nth-child(9)){transform:rotate(160deg)}
+.scanner-kiosk :is(.loaderA-9,.kinetic-loaderA:nth-child(10)){transform:rotate(180deg)}
+.scanner-kiosk :is(.loaderA-10,.kinetic-loaderA:nth-child(11)){transform:rotate(200deg)}
+.scanner-kiosk :is(.loaderA-11,.kinetic-loaderA:nth-child(12)){transform:rotate(220deg)}
+.scanner-kiosk :is(.loaderA-12,.kinetic-loaderA:nth-child(13)){transform:rotate(240deg)}
+.scanner-kiosk :is(.loaderA-13,.kinetic-loaderA:nth-child(14)){transform:rotate(260deg)}
+.scanner-kiosk :is(.loaderA-14,.kinetic-loaderA:nth-child(15)){transform:rotate(280deg)}
+.scanner-kiosk :is(.loaderA-15,.kinetic-loaderA:nth-child(16)){transform:rotate(300deg)}
+.scanner-kiosk :is(.loaderA-16,.kinetic-loaderA:nth-child(17)){transform:rotate(320deg)}
+.scanner-kiosk :is(.loaderA-17,.kinetic-loaderA:nth-child(18)){transform:rotate(340deg)}
+
+/* 18 Staggered Harmonic Delays around 360° (0.18s continuous phase shift) */
+.scanner-kiosk .ball0{animation-delay:0s!important}
+.scanner-kiosk .ball1{animation-delay:0.18s!important}
+.scanner-kiosk .ball2{animation-delay:0.36s!important}
+.scanner-kiosk .ball3{animation-delay:0.54s!important}
+.scanner-kiosk .ball4{animation-delay:0.72s!important}
+.scanner-kiosk .ball5{animation-delay:0.90s!important}
+.scanner-kiosk .ball6{animation-delay:1.08s!important}
+.scanner-kiosk .ball7{animation-delay:1.26s!important}
+.scanner-kiosk .ball8{animation-delay:1.44s!important}
+.scanner-kiosk .ball9{animation-delay:1.62s!important}
+.scanner-kiosk .ball10{animation-delay:1.80s!important}
+.scanner-kiosk .ball11{animation-delay:1.98s!important}
+.scanner-kiosk .ball12{animation-delay:2.16s!important}
+.scanner-kiosk .ball13{animation-delay:2.34s!important}
+.scanner-kiosk .ball14{animation-delay:2.52s!important}
+.scanner-kiosk .ball15{animation-delay:2.70s!important}
+.scanner-kiosk .ball16{animation-delay:2.88s!important}
+.scanner-kiosk .ball17{animation-delay:3.06s!important}
+
+@keyframes kineticMove{0%{transform:translateY(0em)}50%{transform:translateY(4.45em)}100%{transform:translateY(0em)}}
+@keyframes irisRotate360{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+
+/* Central Holographic Target Reticle */
+.scanner-kiosk .kinetic-center-target{position:absolute;width:86px;height:86px;border-radius:50%;background:var(--scan-surface);border:1.5px solid rgba(255,255,255,0.95);box-shadow:5px 5px 12px var(--scan-shadow),-5px -5px 12px var(--scan-light),inset 2px 2px 4px rgba(255,255,255,0.9);display:flex;align-items:center;justify-content:center;z-index:10;overflow:hidden}
+
+.scanner-kiosk .kinetic-reticle-ring.ring-outer{position:absolute;inset:5px;border-radius:50%;border:1.5px dashed rgba(2,132,199,0.45);animation:rotateReticle 16s linear infinite}
+.scanner-kiosk .kinetic-reticle-ring.ring-inner{position:absolute;inset:12px;border-radius:50%;border:1px dotted rgba(2,132,199,0.35);animation:rotateReticleRev 10s linear infinite}
+@keyframes rotateReticle{to{transform:rotate(360deg)}}
+@keyframes rotateReticleRev{to{transform:rotate(-360deg)}}
+
+.scanner-kiosk .kinetic-laser-sweep{position:absolute;left:8px;right:8px;height:2px;background:linear-gradient(90deg,transparent,#0284c7 20%,#38bdf8 50%,#0284c7 80%,transparent);box-shadow:0 0 10px #38bdf8,0 0 4px #0284c7;animation:reticleLaserSweep 2.2s ease-in-out infinite;z-index:4;pointer-events:none}
+@keyframes reticleLaserSweep{0%,100%{top:14px;opacity:.25}50%{top:70px;opacity:1}}
+
+.scanner-kiosk .kinetic-corner{position:absolute;width:10px;height:10px;border:2px solid #0284c7;z-index:3;pointer-events:none;transition:border-color .3s}
+.scanner-kiosk .corner-tl{top:22px;left:22px;border-right:0;border-bottom:0;border-radius:3px 0 0 0}
+.scanner-kiosk .corner-tr{top:22px;right:22px;border-left:0;border-bottom:0;border-radius:0 3px 0 0}
+.scanner-kiosk .corner-bl{bottom:22px;left:22px;border-right:0;border-top:0;border-radius:0 0 0 3px}
+.scanner-kiosk .corner-br{bottom:22px;right:22px;border-left:0;border-top:0;border-radius:0 0 3px 0}
+
+.scanner-kiosk .kinetic-target-core{position:relative;z-index:5;display:flex;align-items:center;justify-content:center;color:#0284c7;transition:color .3s ease}
+.scanner-kiosk .kinetic-scan-icon{filter:drop-shadow(0 2px 6px rgba(2,132,199,0.35));transition:transform .3s ease,filter .3s ease}
+
+/* Verifying State Reticle */
+.scanner-kiosk .stage-verifying .kinetic-reticle-ring.ring-outer{border-color:rgba(245,158,11,0.55);animation-duration:6s}
+.scanner-kiosk .stage-verifying .kinetic-reticle-ring.ring-inner{border-color:rgba(217,119,6,0.45);animation-duration:4s}
+.scanner-kiosk .stage-verifying .kinetic-laser-sweep{background:linear-gradient(90deg,transparent,#d97706 20%,#fbbf24 50%,#d97706 80%,transparent);box-shadow:0 0 10px #fbbf24}
+.scanner-kiosk .stage-verifying .kinetic-corner{border-color:#d97706}
+.scanner-kiosk .stage-verifying .kinetic-target-core{color:#d97706}
+
+/* Status Beacon Pill & Activate Button */
+.scanner-kiosk .scanner-ready-pill{display:inline-flex;align-items:center;gap:10px;padding:9px 20px;border-radius:999px;font-size:13px;font-weight:800;letter-spacing:.12em;background:var(--scan-surface);border:1px solid rgba(255,255,255,0.95);box-shadow:4px 4px 10px var(--scan-shadow),-4px -4px 10px var(--scan-light);margin-bottom:8px;transition:all .3s ease}
+.scanner-kiosk .scanner-ready-pill.scanner-ready-ready{color:#157455}
+.scanner-kiosk .scanner-ready-pill.scanner-ready-scanning{color:#0284c7;box-shadow:0 0 16px rgba(14,165,233,0.25),4px 4px 10px var(--scan-shadow),-4px -4px 10px var(--scan-light)}
+.scanner-kiosk .scanner-ready-pill.scanner-ready-verifying{color:#b45309;box-shadow:0 0 16px rgba(245,158,11,0.25),4px 4px 10px var(--scan-shadow),-4px -4px 10px var(--scan-light)}
+
+.scanner-kiosk .scanner-beacon{position:relative;display:inline-flex;align-items:center;justify-content:center;width:10px;height:10px}
+.scanner-kiosk .scanner-beacon-dot{position:relative;width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor}
+.scanner-kiosk .scanner-beacon-ping{position:absolute;inset:-3px;border-radius:50%;background:currentColor;opacity:.5;animation:beaconPing 1.8s cubic-bezier(0,0,.2,1) infinite}
+@keyframes beaconPing{0%{transform:scale(.8);opacity:.8}75%,100%{transform:scale(2.4);opacity:0}}
+
+.scanner-kiosk .scanner-activate-btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:13px 26px;border-radius:16px;border:1px solid rgba(255,255,255,0.95);background:var(--scan-surface);color:#263b55;font-size:14px;font-weight:700;letter-spacing:.04em;box-shadow:6px 6px 14px var(--scan-shadow),-6px -6px 14px var(--scan-light);cursor:pointer;margin-top:10px;transition:transform .2s cubic-bezier(0.34,1.56,0.64,1),box-shadow .2s ease,color .2s}
+.scanner-kiosk .scanner-activate-btn:hover{transform:translateY(-2px);color:#0284c7;box-shadow:8px 8px 18px var(--scan-shadow),-8px -8px 18px var(--scan-light)}
+.scanner-kiosk .scanner-activate-btn:active{transform:translateY(1px);box-shadow:inset 3px 3px 6px var(--scan-shadow),inset -3px -3px 6px var(--scan-light)}
+.scanner-kiosk .scanner-subhint{font-size:12.5px;opacity:.85;margin-top:6px}
 .scanner-kiosk .scanner-panel-exit_allowed{background:#e2f2eb;border:2px solid #2a8d66}
 .scanner-kiosk .scanner-panel-exit_denied,.scanner-kiosk .scanner-panel-server_error{background:#fae9e8;border:2px solid #be4350}
 .scanner-kiosk .scanner-result-icon.success,.scanner-kiosk .scanner-panel-exit_allowed .scanner-result-heading{color:#116544}
@@ -51,10 +169,15 @@
 .scanner-kiosk .scanner-test button{background:linear-gradient(110deg,#20aeb2,#1676ef);border-radius:14px;padding:12px 18px;box-shadow:4px 4px 9px var(--scan-shadow),-4px -4px 9px var(--scan-light);transition:translate .2s,filter .2s}
 .scanner-kiosk .scanner-footer{color:#526781;margin-top:auto;padding:18px 0 0}
 .scanner-kiosk :is(select,button,input:not(.scanner-capture)):focus-visible{outline:3px solid #168cda;outline-offset:4px}
-@media(hover:hover) and (pointer:fine){.scanner-kiosk .scanner-logout:hover,.scanner-kiosk .scanner-test button:hover{translate:0 -2px;filter:brightness(1.04)}.scanner-kiosk .scanner-visual:hover{translate:0 -4px}}
+@media(hover:hover) and (pointer:fine){.scanner-kiosk .scanner-logout:hover,.scanner-kiosk .scanner-test button:hover{translate:0 -2px;filter:brightness(1.04)}.scanner-kiosk .scanner-iris-basin:hover{translate:0 -3px;box-shadow:16px 16px 36px var(--scan-shadow),-16px -16px 36px var(--scan-light)}}
 .scanner-kiosk .scanner-logout:active,.scanner-kiosk .scanner-test button:active{translate:0 1px}
-@media(max-width:720px){.scanner-kiosk .scanner-topbar{padding:17px}.scanner-kiosk .scanner-panel{min-height:440px;margin-top:28px;border-radius:24px}.scanner-kiosk .scanner-brand strong{font-size:12px}.scanner-kiosk .scanner-controls{gap:12px}.scanner-kiosk .scanner-logout{padding:10px}.scanner-kiosk .scanner-controls select{min-width:130px}.scanner-kiosk .scanner-facts{grid-template-columns:1fr}.scanner-kiosk .scanner-result-heading{font-size:30px}}
-@media(prefers-reduced-motion:reduce){.scanner-kiosk *{transition:none!important;animation:none!important;translate:none!important}}
+@media(max-width:720px){.scanner-kiosk .scanner-topbar{padding:17px}.scanner-kiosk .scanner-panel{min-height:440px;margin-top:28px;border-radius:24px}.scanner-kiosk .scanner-brand strong{font-size:12px}.scanner-kiosk .scanner-controls{gap:12px}.scanner-kiosk .scanner-logout{padding:10px}.scanner-kiosk .scanner-controls select{min-width:130px}.scanner-kiosk .scanner-facts{grid-template-columns:1fr}.scanner-kiosk .scanner-result-heading{font-size:30px}.scanner-kiosk .scanner-iris-basin{width:230px;height:230px;font-size:13.5px}.scanner-kiosk .kinetic-center-target{width:76px;height:76px}.scanner-kiosk .corner-tl{top:19px;left:19px}.scanner-kiosk .corner-tr{top:19px;right:19px}.scanner-kiosk .corner-bl{bottom:19px;left:19px}.scanner-kiosk .corner-br{bottom:19px;right:19px}}
+@media(prefers-reduced-motion:reduce){
+  .scanner-kiosk *:not([class*="kinetic-"]):not([class*="scanner-beacon"]){transition:none!important;translate:none!important}
+  .scanner-kiosk .kinetic-ball{animation-duration:3.24s!important;animation-iteration-count:infinite!important;animation-play-state:running!important}
+  .scanner-kiosk .kinetic-iris-main{animation-duration:28s!important;animation-iteration-count:infinite!important;animation-play-state:running!important}
+  .scanner-kiosk .kinetic-reticle-ring,.scanner-kiosk .kinetic-laser-sweep,.scanner-kiosk .scanner-beacon-ping{animation-play-state:running!important}
+}
 }
 
 .scanner-footer-account{display:flex;align-items:center;gap:16px;flex-shrink:0}

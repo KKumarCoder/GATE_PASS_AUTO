@@ -476,6 +476,18 @@ test('admins directly set staff passwords, revoke sessions and invalidate recove
  assert.equal((await api('patch',`/users/${target._id}/password`).send({password:'short'})).status,400);
  assert.equal((await api('patch',`/users/${admin._id}/password`).send({password:'StaffNewPassword123!'})).status,400);
 });
+test('admins permanently delete staff accounts with safety checks and session revocation',async()=>{
+ const target=await accessUser('TEACHER');
+ const manager=await accessUser('ADMIN');
+ assert.equal((await api('delete',`/users/${target._id}`,teacher)).status,403);
+ assert.equal((await api('delete',`/users/${admin._id}`,admin)).status,400);
+ assert.equal((await api('delete',`/users/${admin._id}`,manager)).status,403);
+ const res=await api('delete',`/users/${target._id}`,admin);
+ assert.equal(res.status,200);
+ assert.equal(await User.findById(target._id),null);
+ assert.equal(await Session.countDocuments({user:target._id}),0);
+ assert.ok(await AuditLog.exists({entityId:target._id,action:'USER_DELETED'}));
+});
 
 test('pagination and malformed student imports return validation errors',async()=>{
  for(const route of ['/students','/gatepasses','/visitors','/gate-logs','/audit-logs','/notifications']){
@@ -960,6 +972,35 @@ test('staff directory edits validate photos and restrict deletion of active move
  const history=await models.StaffPass.findById(pass._id).populate('staff');assert.equal(history.staff.name,'Updated Staff');
  assert.equal((await models.StaffMember.findById(member._id)).active,false);
  assert.ok(await AuditLog.exists({entityId:member._id,action:'STAFF_DIRECTORY_DELETED'}));
+});
+
+test('admins can add new staff members and sync bus staff into staff directory',async()=>{
+ const newStaff={employeeId:'DIR-NEW-01',name:'New Staff Member',staffRole:'teacher',designation:'Science Teacher',mobile:'+919876543299',email:'newstaff@school.test',photo:'',address:'School campus',dateOfBirth:null,dateOfJoining:null,active:true};
+ assert.equal((await api('post','/staff-directory',teacher).send(newStaff)).status,403);
+ const created=await api('post','/staff-directory').send(newStaff);
+ assert.equal(created.status,201);
+ assert.equal(created.body.data.employeeId,'DIR-NEW-01');
+ assert.equal(created.body.data.name,'New Staff Member');
+ assert.ok(await AuditLog.exists({entityId:created.body.data._id,action:'STAFF_DIRECTORY_CREATED'}));
+ 
+ assert.equal((await api('post','/staff-directory').send(newStaff)).status,409);
+
+ const syncRes=await api('post','/staff-directory/sync-bus-staff');
+ assert.equal(syncRes.status,200);
+ assert.ok(syncRes.body.data.total >= 0);
+
+ const busStaffPayload={staffId:'SYNC-DRV-99',driverName:'Sync Test Driver',busNumber:'99',mobile:'+919876543219',email:'syncdrv@school.test',photo:''};
+ const busRes=await api('post','/bus-staff').send(busStaffPayload);
+ assert.equal(busRes.status,201);
+ const syncedStaff=await models.StaffMember.findOne({employeeId:'SYNC-DRV-99'});
+ assert.ok(syncedStaff);
+ assert.equal(syncedStaff.name,'Sync Test Driver');
+ assert.equal(syncedStaff.staffRole,'bus staff');
+ assert.equal(syncedStaff.designation,'Bus 99 Driver');
+
+ await models.BusDriver.deleteOne({_id:busRes.body.data._id});
+ await models.StaffMember.deleteOne({_id:syncedStaff._id});
+ await models.StaffMember.deleteOne({_id:created.body.data._id});
 });
 
 test('student and directory staff status actions move records between active and inactive lists',async()=>{

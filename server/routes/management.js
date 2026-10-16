@@ -25,7 +25,7 @@ const router=Router();router.use(authenticate);
 const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:5*1024*1024,files:1}});
 async function validateWorkbookArchive(buffer){await new Promise((resolve,reject)=>yauzl.fromBuffer(buffer,{lazyEntries:true},(err,zip)=>{if(err)return reject(err);let total=0,count=0;zip.on('error',reject);zip.on('entry',entry=>{total+=entry.uncompressedSize;count++;if(total>25*1024*1024||count>1000){zip.close();return reject(new Error('Workbook archive is too large.'));}zip.readEntry();});zip.on('end',resolve);zip.readEntry();}));}
 export const uploadDir=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../uploads');
-router.post('/uploads',requirePermission('students.manage','visitors.create','settings.manage'),upload.single('file'),wrap(async(req,res)=>{
+router.post('/uploads',requirePermission('students.manage','visitors.create','settings.manage','bus-staff.view'),upload.single('file'),wrap(async(req,res)=>{
   assert(req.file,400,'Select an image.');const b=req.file.buffer;let ext;
   if(b[0]===0xff&&b[1]===0xd8&&b[2]===0xff)ext='jpg';
   else if(b.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))ext='png';
@@ -40,25 +40,52 @@ router.get('/students',requirePermission('students.view'),wrap(async(req,res)=>{
 }));
 router.get('/students/:id',requirePermission('students.view'),wrap(async(req,res)=>{objectId.parse(req.params.id);const record=await Student.findById(req.params.id);assert(record,404,'Student not found.');ok(res,record);}));
 router.get('/bus-drivers',requirePermission('passes.create','bus-swaps.create'),wrap(async(req,res)=>ok(res,{items:await BusDriver.find().select('busNumber driverName email').sort({busNumber:1}).lean().then(items=>items.map(({busNumber,driverName,email})=>({busNumber,driverName,emailConfigured:Boolean(email)})))})));
-router.get('/bus-staff',requirePermission('settings.manage'),wrap(async(req,res)=>ok(res,{items:await BusDriver.find().sort({busNumber:1}).lean().then(items=>items.map(({_id,staffId,busNumber,driverName,mobile,phone,email,photo})=>({_id,staffId:staffId||'',busNumber,driverName,mobile:mobile||phone||'',email,photo:photo||''})))})));
-router.post('/bus-staff',requirePermission('settings.manage'),validate(busStaffSchema),wrap(async(req,res)=>{
+router.get('/bus-staff',requirePermission('settings.manage','bus-staff.view'),wrap(async(req,res)=>ok(res,{items:await BusDriver.find().sort({busNumber:1}).lean().then(items=>items.map(({_id,staffId,busNumber,driverName,mobile,phone,email,photo})=>({_id,staffId:staffId||'',busNumber,driverName,mobile:mobile||phone||'',email,photo:photo||''})))})));
+router.post('/bus-staff',requirePermission('settings.manage','bus-staff.view'),validate(busStaffSchema),wrap(async(req,res)=>{
   const {staffId,busNumber}=req.body;
   assert(!await BusDriver.exists({$or:[{staffId},{busNumber}]}),409,'A staff ID or bus number is already registered.');
-  const staff=await transaction(async session=>{const [record]=await BusDriver.create([{...req.body,phone:req.body.mobile}],{session});await audit(req,'BUS_STAFF_CREATED',record._id,{staffId,busNumber},session);return record;});
+  const staff=await transaction(async session=>{
+    const [record]=await BusDriver.create([{...req.body,phone:req.body.mobile}],{session});
+    await audit(req,'BUS_STAFF_CREATED',record._id,{staffId,busNumber},session);
+    const rawMobile=record.mobile||record.phone||'';
+    const formattedMobile=rawMobile?(rawMobile.startsWith('+')?rawMobile:`+91${rawMobile}`):'';
+    const existingStaff=await StaffMember.findOne({employeeId:staffId}).session(session);
+    if(existingStaff){
+      Object.assign(existingStaff,{name:record.driverName,staffRole:existingStaff.staffRole||'bus staff',designation:existingStaff.designation||`Bus ${record.busNumber} Driver`,mobile:formattedMobile||existingStaff.mobile,email:record.email?record.email.toLowerCase():existingStaff.email,photo:record.photo||existingStaff.photo,active:true,deletedAt:null});
+      await existingStaff.save({session});
+    } else {
+      await StaffMember.create([{employeeId:staffId,name:record.driverName,staffRole:'bus staff',designation:`Bus ${record.busNumber} Driver`,mobile:formattedMobile,email:record.email?record.email.toLowerCase():'',photo:record.photo||'',active:true,source:'Bus Staff Directory'}],{session});
+    }
+    return record;
+  });
   ok(res,{...staff.toObject(),mobile:staff.mobile||staff.phone},'Bus staff added.',201);
 }));
-router.put('/bus-staff/:id',requirePermission('settings.manage'),validate(busStaffSchema),wrap(async(req,res)=>{
+router.put('/bus-staff/:id',requirePermission('settings.manage','bus-staff.view'),validate(busStaffSchema),wrap(async(req,res)=>{
   objectId.parse(req.params.id);
   const staff=await transaction(async session=>{
     const record=await BusDriver.findById(req.params.id).session(session);assert(record,404,'Bus staff not found.');
+    const prevStaffId=record.staffId;
     assert(!await BusDriver.exists({_id:{$ne:record._id},$or:[{staffId:req.body.staffId},{busNumber:req.body.busNumber}]}).session(session),409,'A staff ID or bus number is already registered.');
     if(record.busNumber!==req.body.busNumber)assert(!await BusSwap.exists({date:{$gte:schoolDate()},status:{$in:['PENDING','APPROVED']},$or:[{fromBus:record.busNumber},{toBus:record.busNumber}]}).session(session),409,'This bus has active bus swaps. Cancel them before changing its number.');
     if(record.busNumber!==req.body.busNumber)assert(!await GatePass.exists({busNumber:record.busNumber,status:{$in:['PARENT_VERIFICATION_PENDING','PARENT_VERIFIED','ADMIN_APPROVAL_PENDING','APPROVED','READY_FOR_EXIT','EXITED']}}).session(session),409,'This bus has active gate passes. Complete them before changing its bus number.');
-    record.set({...req.body,phone:req.body.mobile});await record.save({session});await audit(req,'BUS_STAFF_UPDATED',record._id,{staffId:record.staffId,busNumber:record.busNumber},session);return record;
+    record.set({...req.body,phone:req.body.mobile});await record.save({session});await audit(req,'BUS_STAFF_UPDATED',record._id,{staffId:record.staffId,busNumber:record.busNumber},session);
+    const rawMobile=record.mobile||record.phone||'';
+    const formattedMobile=rawMobile?(rawMobile.startsWith('+')?rawMobile:`+91${rawMobile}`):'';
+    const existingStaff=await StaffMember.findOne({employeeId:prevStaffId}).session(session);
+    if(existingStaff){
+      existingStaff.employeeId=record.staffId;
+      existingStaff.name=record.driverName;
+      existingStaff.designation=`Bus ${record.busNumber} Driver`;
+      if(formattedMobile)existingStaff.mobile=formattedMobile;
+      if(record.email)existingStaff.email=record.email.toLowerCase();
+      if(record.photo)existingStaff.photo=record.photo;
+      await existingStaff.save({session});
+    }
+    return record;
   });
   ok(res,{...staff.toObject(),mobile:staff.mobile||staff.phone},'Bus staff updated.');
 }));
-router.delete('/bus-staff/:id',requirePermission('settings.manage'),wrap(async(req,res)=>{
+router.delete('/bus-staff/:id',requirePermission('settings.manage','bus-staff.view'),wrap(async(req,res)=>{
   objectId.parse(req.params.id);
   await transaction(async session=>{
     const record=await BusDriver.findById(req.params.id).session(session);assert(record,404,'Bus staff not found.');
@@ -146,7 +173,7 @@ router.post('/students/import',requirePermission('students.manage'),upload.singl
   assert(rows.length>0&&rows.length<=1000,400,'Import between 1 and 1,000 students.');const parsed=rows.map((row,i)=>{const normalized=normalizeStudentImportRow(row);const value=studentSchema.safeParse(normalized);assert(value.success,400,`Invalid row ${i+2}: ${value.error?.issues.map(x=>`${x.path.join('.')}: ${x.message}`).join('; ')}`);return value.data;});
   await transaction(async session=>{await Student.insertMany(parsed,{session});await audit(req,'STUDENTS_IMPORTED',undefined,{count:parsed.length},session);});ok(res,{count:parsed.length},'Students imported.',201);
 }));
-router.get('/users',permit(...admins),wrap(async(req,res)=>{
+router.get('/users',requirePermission('users.manage','staff.manage'),wrap(async(req,res)=>{
   const today=schoolDate();
   const passesToday=await StaffPass.find({$or:[{passDate:today},{passDate:{$exists:false},$expr:{$eq:[{$dateToString:{format:'%Y-%m-%d',date:'$createdAt',timezone:'Asia/Kolkata'}},today]}}]}).select('staff employeeId');
   const passEmpIds=new Set(passesToday.map(p=>p.employeeId).filter(Boolean));
@@ -171,7 +198,7 @@ router.patch('/users/:id',permit(...admins),validate(accessSchema),wrap(async(re
     assert(req.body.role!=='SUPER_ADMIN'&&(req.user.role==='SUPER_ADMIN'||req.body.role!=='ADMIN'),403,'Only a super administrator can appoint administrators.');
     const before={role:user.role,permissions:permissionsFor(user),assignedGate:assignedGateFor(user),active:user.active,mobile:user.mobile};
     if(req.body.role && req.body.role!==user.role){user.permissions=undefined;user.assignedGate=undefined;user.guardPinHash=undefined;user.guardPinLookup=undefined;user.scannerOnly=false;}
-    user.set(req.body);if(isAdmin(user))user.permissions=undefined;
+    user.set(req.body);if(isAdmin(user)&&!req.body.permissions)user.permissions=undefined;
     await validateGate(user);user.sessionVersion+=1;
     await user.save({session});await Session.deleteMany({user:user._id}).session(session);
     await audit(req,'USER_ACCESS_CHANGED',user._id,{before,after:{role:user.role,permissions:permissionsFor(user),assignedGate:assignedGateFor(user),active:user.active,mobile:user.mobile}},session);
@@ -205,6 +232,19 @@ router.patch('/users/:id/password',permit(...admins),validate(z.object({password
   });
   ok(res,{},'Password updated. The staff member must sign in again.');
 }));
+router.delete('/users/:id',permit(...admins),wrap(async(req,res)=>{
+  objectId.parse(req.params.id);assert(req.params.id!==String(req.user._id),400,'You cannot delete your own account.');
+  await transaction(async session=>{
+    const user=await User.findById(req.params.id).session(session);assert(user,404,'User not found.');
+    assert(user.role!=='SUPER_ADMIN',403,'The super administrator account cannot be deleted.');
+    assert(req.user.role==='SUPER_ADMIN'||user.role!=='ADMIN',403,'Only a super administrator can delete administrators.');
+    assert(!await StaffPass.exists({staff:user._id,status:{$in:['REQUESTED','APPROVED','EXITED']}}).session(session),409,'Complete or cancel active staff movements before deleting this user.');
+    await Session.deleteMany({user:user._id}).session(session);
+    await user.deleteOne({session});
+    await audit(req,'USER_DELETED',user._id,{employeeId:user.employeeId,name:user.name,role:user.role},session);
+  });
+  ok(res,{},'Staff account permanently deleted.');
+}));
 router.get('/settings',wrap(async(req,res)=>{const settings=await SystemSetting.findOne({key:'school'}).lean();const otpChannels={sms:isSmsOTPConfigured(),email:isEmailOTPConfigured()};if(!can(req.user,'settings.manage'))return ok(res,{schoolName:settings?.schoolName,address:settings?.address,logo:settings?.logo,gates:assignedGateFor(req.user)?[assignedGateFor(req.user)]:(settings?.gates||['Main Gate']),otpDeliveryMode:env.otpDeliveryMode,otpChannels});ok(res,{...settings,whatsappProvider:process.env.WHATSAPP_PROVIDER||'none',whatsappConfigured:Boolean(process.env.WHATSAPP_TOKEN),otpDeliveryMode:env.otpDeliveryMode,otpChannels});}));
 router.put('/settings',requirePermission('settings.manage'),validate(settingsSchema),wrap(async(req,res)=>{const settings=await transaction(async session=>{const assigned=await User.find({active:true}).select('role assignedGate').session(session);assert(assigned.every(user=>!assignedGateFor(user)||req.body.gates.includes(assignedGateFor(user))),409,'Reassign staff before removing their assigned gate.');const s=await SystemSetting.findOneAndUpdate({key:'school'},req.body,{upsert:true,new:true,session});await audit(req,'SETTINGS_UPDATED',s._id,{},session);return s;});ok(res,settings);}));
 for(const [route,Model,sort] of [['gate-logs',GateEvent,'timestamp'],['audit-logs',AuditLog,'createdAt'],['notifications',Notification,'createdAt']])router.get(`/${route}`,requirePermission(route==='gate-logs'?'logs.view':route==='audit-logs'?'audit.view':'notifications.view'),wrap(async(req,res)=>{const page=pageNumber.parse(req.query.page);const query={};if(req.query.gatePassId){objectId.parse(req.query.gatePassId);query.gatePassId=req.query.gatePassId;}const items=await Model.find(query).sort({[sort]:-1}).skip((page-1)*50).limit(50).populate(route==='notifications'?[]:[{path:'performedBy',select:'name role'}]);ok(res,{items,total:await Model.countDocuments(query),page});}));
@@ -223,7 +263,7 @@ const directorySchema=z.object({
  photo:z.union([z.literal(''),z.string().regex(/^\/api\/uploads\/[a-f0-9-]+\.(jpg|png|webp)$/)]),
  address:z.string().trim().max(500),dateOfBirth:z.string().datetime().nullable(),dateOfJoining:z.string().datetime().nullable(),active:z.boolean()
 }).strict();
-router.patch('/staff-directory/:id/status',permit(...admins),validate(z.object({active:z.boolean()}).strict()),wrap(async(req,res)=>{
+router.patch('/staff-directory/:id/status',requirePermission('staff.manage'),validate(z.object({active:z.boolean()}).strict()),wrap(async(req,res)=>{
  objectId.parse(req.params.id);
  const record=await transaction(async session=>{
   const staff=await StaffMember.findOne({_id:req.params.id,deletedAt:null}).session(session);assert(staff,404,'Staff member not found.');
@@ -231,7 +271,7 @@ router.patch('/staff-directory/:id/status',permit(...admins),validate(z.object({
   staff.active=req.body.active;await staff.save({session});await audit(req,'STAFF_DIRECTORY_STATUS_CHANGED',staff._id,{active:staff.active},session);return staff;
  });ok(res,record);
 }));
-router.put('/staff-directory/:id',permit(...admins),validate(directorySchema),wrap(async(req,res)=>{
+router.put('/staff-directory/:id',requirePermission('staff.manage'),validate(directorySchema),wrap(async(req,res)=>{
  objectId.parse(req.params.id);
  const record=await transaction(async session=>{
   const current=await StaffMember.findOne({_id:req.params.id,deletedAt:null}).session(session);assert(current,404,'Staff member not found.');
@@ -239,13 +279,69 @@ router.put('/staff-directory/:id',permit(...admins),validate(directorySchema),wr
   Object.assign(current,req.body);await current.save({session});await audit(req,'STAFF_DIRECTORY_UPDATED',current._id,{},session);return current;
  });ok(res,record);
 }));
-router.delete('/staff-directory/:id',permit(...admins),wrap(async(req,res)=>{
+router.delete('/staff-directory/:id',requirePermission('staff.manage'),wrap(async(req,res)=>{
  objectId.parse(req.params.id);
  await transaction(async session=>{
   const current=await StaffMember.findOne({_id:req.params.id,deletedAt:null}).session(session);assert(current,404,'Staff member not found.');
   assert(!await StaffPass.exists({staff:current._id,staffModel:'StaffMember',status:{$in:['REQUESTED','APPROVED','EXITED']}}).session(session),409,'Complete active movements before deleting this staff member.');
   current.active=false;current.deletedAt=new Date();await current.save({session});await audit(req,'STAFF_DIRECTORY_DELETED',current._id,{},session);
  });ok(res,{},'Staff member removed; movement history retained.');
+}));
+router.post('/staff-directory',requirePermission('staff.manage'),validate(directorySchema),wrap(async(req,res)=>{
+  const existing=await StaffMember.findOne({employeeId:req.body.employeeId});
+  if(existing&&!existing.deletedAt)assert(false,409,'A staff member with this Staff ID already exists.');
+  const record=await transaction(async session=>{
+    let staff;
+    if(existing&&existing.deletedAt){
+      Object.assign(existing,{...req.body,deletedAt:null});
+      await existing.save({session});
+      staff=existing;
+    } else {
+      const [created]=await StaffMember.create([req.body],{session});
+      staff=created;
+    }
+    await audit(req,'STAFF_DIRECTORY_CREATED',staff._id,{employeeId:staff.employeeId,name:staff.name},session);
+    return staff;
+  });
+  ok(res,{...record.toObject(),hasPassToday:false},'Staff member added.',201);
+}));
+router.post('/staff-directory/sync-bus-staff',requirePermission('staff.manage'),wrap(async(req,res)=>{
+  const drivers=await BusDriver.find().lean();
+  let added=0,updated=0;
+  await transaction(async session=>{
+    for(const d of drivers){
+      if(!d.staffId)continue;
+      const rawMobile=d.mobile||d.phone||'';
+      const formattedMobile=rawMobile?(rawMobile.startsWith('+')?rawMobile:`+91${rawMobile}`):'';
+      const existing=await StaffMember.findOne({employeeId:d.staffId}).session(session);
+      if(existing){
+        let changed=false;
+        if(existing.deletedAt){existing.deletedAt=null;changed=true;}
+        if(!existing.active){existing.active=true;changed=true;}
+        if(!existing.photo&&d.photo){existing.photo=d.photo;changed=true;}
+        if(!existing.email&&d.email){existing.email=d.email.toLowerCase();changed=true;}
+        if(!existing.mobile&&formattedMobile){existing.mobile=formattedMobile;changed=true;}
+        if(!existing.staffRole){existing.staffRole='bus staff';changed=true;}
+        if(!existing.designation){existing.designation=`Bus ${d.busNumber} Driver`;changed=true;}
+        if(changed){await existing.save({session});updated++;}
+      } else {
+        await StaffMember.create([{
+          employeeId:d.staffId,
+          name:d.driverName,
+          staffRole:'bus staff',
+          designation:`Bus ${d.busNumber} Driver`,
+          mobile:formattedMobile,
+          email:d.email?d.email.toLowerCase():'',
+          photo:d.photo||'',
+          active:true,
+          source:'Bus Staff Directory'
+        }],{session});
+        added++;
+      }
+    }
+    await audit(req,'BUS_STAFF_SYNCED_TO_DIRECTORY',req.user._id,{added,updated,total:drivers.length},session);
+  });
+  ok(res,{added,updated,total:drivers.length},`Bus staff synced: ${added} added, ${updated} updated.`);
 }));
 export async function staffHasPassToday(staffId, session = null) {
   const today = schoolDate();
@@ -274,7 +370,7 @@ export async function staffHasPassToday(staffId, session = null) {
   const query = { $and: [staffCondition, dateCondition] };
   return session ? await StaffPass.exists(query).session(session) : await StaffPass.exists(query);
 }
-router.get('/staff-directory',permit(...admins),wrap(async(req,res)=>{
+router.get('/staff-directory',requirePermission('staff.manage'),wrap(async(req,res)=>{
   const today=schoolDate();
   const passesToday=await StaffPass.find({$or:[{passDate:today},{passDate:{$exists:false},$expr:{$eq:[{$dateToString:{format:'%Y-%m-%d',date:'$createdAt',timezone:'Asia/Kolkata'}},today]}}]}).select('staff employeeId');
   const passEmpIds=new Set(passesToday.map(p=>p.employeeId).filter(Boolean));
@@ -283,7 +379,16 @@ router.get('/staff-directory',permit(...admins),wrap(async(req,res)=>{
   const items=members.map(m=>{const obj=m.toObject();obj.hasPassToday=passEmpIds.has(m.employeeId)||passStaffIds.has(String(m._id));return obj;});
   ok(res,{items});
 }));
-router.get('/staff-passes',requirePermission('staff.view'),wrap(async(req,res)=>{const query=can(req.user,'staff.approve')||can(req.user,'staff.move')?{}:{staff:req.user._id};if(req.query.status)query.status=z.enum(['REQUESTED','APPROVED','EXITED','RETURNED']).parse(req.query.status);else if(req.query.excludePending==='true')query.status={$ne:'REQUESTED'};ok(res,{items:await StaffPass.find(query).populate('staff','name employeeId').populate('approvedBy','name').sort({createdAt:-1}).limit(100)});}));
+router.get('/staff-passes',requirePermission('staff.view'),wrap(async(req,res)=>{
+  const query=can(req.user,'staff.approve')||can(req.user,'staff.move')?{}:{staff:req.user._id};
+  if(req.query.status)query.status=z.enum(['REQUESTED','APPROVED','EXITED','RETURNED']).parse(req.query.status);
+  else if(req.query.excludePending==='true')query.status={$ne:'REQUESTED'};
+  const page=req.query.page?pageNumber.parse(req.query.page):1;
+  const limit=req.query.limit?Math.min(parseInt(req.query.limit,10)||20,100):20;
+  const total=await StaffPass.countDocuments(query);
+  const items=await StaffPass.find(query).populate('staff','name employeeId').populate('approvedBy','name').sort({createdAt:-1}).skip((page-1)*limit).limit(limit);
+  ok(res,{items,total,page,limit});
+}));
 router.get('/staff-passes/:id/print',requirePermission('staff.view'),wrap(async(req,res)=>{
  objectId.parse(req.params.id);
  const scope=can(req.user,'staff.approve')||can(req.user,'staff.move')?{}:{staff:req.user._id};
@@ -307,9 +412,9 @@ router.post('/staff-passes/send-otp',requirePermission('staff.request'),staffOTP
 }));
 router.post('/staff-passes',requirePermission('staff.request'),staffOTPLimit,validate(staffSchema.extend({challengeId:objectId,otp:z.string().regex(/^\d{6}$/)})),wrap(async(req,res)=>{
   const {challengeId,otp,...passBody}=req.body;const challenge=await validateStaffOTP(req,passBody,challengeId,otp);
-  assert(admins.includes(req.user.role)||req.body.staff===String(req.user._id),403,'You can request movement only for yourself.');assert(!req.body.expectedReturn||new Date(req.body.expectedReturn)>new Date(),400,'Expected return must be in the future.');
+  assert(admins.includes(req.user.role)||can(req.user,'staff.manage')||req.body.staff===String(req.user._id),403,'You can request movement only for yourself.');assert(!req.body.expectedReturn||new Date(req.body.expectedReturn)>new Date(),400,'Expected return must be in the future.');
   const staffUser=await User.findOne({_id:req.body.staff,active:true});
-  const staffMember=admins.includes(req.user.role)?await StaffMember.findOne({_id:req.body.staff,active:true}):null;
+  const staffMember=(admins.includes(req.user.role)||can(req.user,'staff.manage'))?await StaffMember.findOne({_id:req.body.staff,active:true}):null;
   const person=staffUser||staffMember;assert(person,404,'Active staff member not found.');
   const staffModel=staffUser?'User':'StaffMember';
   const passDate=schoolDate();
