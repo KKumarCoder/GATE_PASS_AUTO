@@ -1,4 +1,5 @@
 import Users from './pages/Users';
+import Birthdays from './pages/Birthdays';
 import {can, homeFor} from '../../shared/access.mjs';
 import { lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
@@ -36,13 +37,14 @@ import "./soft-depth.css";
 import "./typography.css";
 import "./responsive.css";
 const home = homeFor;
-function Protected({ permission, children }) {
+function Protected({ permission, roles, children }) {
   const { user, loading } = useAuth(),
     location = useLocation();
   if (loading) return <Loading />;
   if (!user)
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   if (user.scannerOnly && location.pathname !== "/gate/scanner") return <Navigate to="/gate/scanner" replace />;
+  if (roles && !roles.includes(user.role)) return <Navigate to={home(user)} replace />;
   if (permission && !can(user,permission))
     return <Navigate to={home(user)} replace />;
   return children;
@@ -84,6 +86,7 @@ function App() {
                   </Protected>
                 }
               />
+              <Route path="birthdays" element={<Protected roles={['ADMIN','SUPER_ADMIN']}><Birthdays /></Protected>} />
               <Route path="bus-swaps" element={<Protected permission="bus-swaps.view"><BusSwaps /></Protected>} />
               <Route
                 path="students"

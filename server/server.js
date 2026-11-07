@@ -3,12 +3,24 @@ import app from "./app.js";
 import { env, validateEnvironment } from "./config/env.js";
 import { expirePasses } from "./services/expiry.service.js";
 import {deliverSwapEmails} from './services/bus-swap-email.service.js';
+import {deliverBirthdays} from './services/birthday/service.js';
 validateEnvironment();
 if (env.otpDeliveryMode === "console")
   console.log(
     "[SRPS] Development OTP mode enabled. Codes will appear in this server terminal (local testing only).",
   );
 await mongoose.connect(env.mongo, { autoIndex: env.node !== "production" });
+const {BirthdayMedia}=await import("./models/index.js");
+await BirthdayMedia.createIndexes();
+// Birthday delivery claims use the built-in unique _id index, including in production.
+let birthdayRunning = false;
+const birthdayTimer = setInterval(async () => {
+  if (birthdayRunning) return;
+  birthdayRunning = true;
+  try { await deliverBirthdays(); } catch { console.error('Birthday automation job failed.'); }
+  finally { birthdayRunning = false; }
+}, 60000);
+birthdayTimer.unref();
 const server = app.listen(env.port, "127.0.0.1", () =>
   console.log(`SRPS API listening on port ${env.port}`),
 );
@@ -29,6 +41,7 @@ timer.unref();
 for (const signal of ["SIGTERM", "SIGINT"])
   process.on(signal, () => {
     clearInterval(timer);
+    clearInterval(birthdayTimer);
     server.close(async () => {
       await mongoose.disconnect();
       process.exit(0);

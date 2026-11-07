@@ -426,3 +426,20 @@ export const RateBucket = make(
   { key: { type: String, unique: true }, count: Number, expiresAt: Date },
   [[{ expiresAt: 1 }, { expireAfterSeconds: 0 }]],
 );
+
+export const BirthdayConfig = make('BirthdayConfig', {
+  key: {type:String, unique:true}, enabled:{type:Boolean,default:false},
+  sendTime:{type:String,default:'07:00'}, background:String,
+  wishesFrom:{type:String,default:'Shree Ram Public School'}, templateName:String,
+  language:{type:String,default:'en'},
+});
+export const BirthdayDelivery = make('BirthdayDelivery', {
+  _id:String, student:ref('Student'), day:String, recipient:String,
+  status:{type:String,enum:['PROCESSING','SENT','FAILED','UNKNOWN']},
+  error:String, providerMessageId:String,
+}, [[{day:1,createdAt:-1},{}]]);
+
+// Only opaque, expiring bearer links expose these generated cards to the provider.
+export const BirthdayMedia = make('BirthdayMedia', {
+  _id:String, image:{type:Buffer,select:false}, expiresAt:{type:Date,required:true},
+}, [[{expiresAt:1},{expireAfterSeconds:0}]]);

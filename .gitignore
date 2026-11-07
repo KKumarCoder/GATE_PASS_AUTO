@@ -8,3 +8,8 @@ coverage/
 server/uploads/
 playwright-report/
 test-results/
+
+# Local environment credentials
+.env
+.env.*
+!.env.example
